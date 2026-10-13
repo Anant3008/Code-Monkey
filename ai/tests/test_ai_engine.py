@@ -940,3 +940,52 @@ def test_validator_warning_on_not_wrapping_nullable_field():
     assert "will evaluate to True for null/missing values under two-valued logic" in warnings[0]
 
 
+def test_prompt_embedded_examples_validate_against_schema():
+    """
+    Ensures that every example JSON embedded in prompts.py validates against
+    the real Pydantic and AST schemas, guaranteeing prompts and schemas never drift.
+    """
+    from prompts import (
+        FEW_SHOT_ASSISTANT,
+        GENERIC_FEW_SHOT_1_ASSISTANT,
+        GENERIC_FEW_SHOT_2_ASSISTANT,
+        GENERIC_FEW_SHOT_3_ASSISTANT,
+        GENERIC_FEW_SHOT_4_ASSISTANT
+    )
+    from ai_engine import LegacyInterpretationSchema, LegacyCandidateAmbiguitySchema
+    from plan_schema import (
+        GenericAnalysisOutput,
+        parse_predicate,
+        validate_predicate_limits,
+        validate_predicate_schema
+    )
+
+    # 1. Legacy Hardcoded Few-Shot
+    for interp in FEW_SHOT_ASSISTANT["interpretations"]:
+        LegacyInterpretationSchema.model_validate(interp)
+    for cand in FEW_SHOT_ASSISTANT["candidate_ambiguities"]:
+        LegacyCandidateAmbiguitySchema.model_validate(cand)
+
+    # 2. Generic Multi-Domain Few-Shots
+    for example in (GENERIC_FEW_SHOT_1_ASSISTANT, GENERIC_FEW_SHOT_2_ASSISTANT, GENERIC_FEW_SHOT_3_ASSISTANT):
+        parsed_out = GenericAnalysisOutput.model_validate(example)
+        field_types = parsed_out.entity_schema.get_field_types()
+
+        # Validate each meaning's predicate AST
+        for term in parsed_out.ambiguous_terms:
+            for meaning in term.meanings:
+                p_ast = parse_predicate(meaning.predicate)
+                validate_predicate_limits(p_ast, max_depth=4, max_nodes=12)
+                validate_predicate_schema(p_ast, field_types, allow_term_ref=False)
+
+        # Validate operation_template where_template
+        tmpl_ast = parse_predicate(parsed_out.operation_template.where_template)
+        validate_predicate_limits(tmpl_ast, max_depth=4, max_nodes=12)
+        validate_predicate_schema(tmpl_ast, field_types, allow_term_ref=True)
+
+    # 3. Unsupported Few-Shot Example
+    assert GENERIC_FEW_SHOT_4_ASSISTANT["status"] == "unsupported"
+    assert "reason" in GENERIC_FEW_SHOT_4_ASSISTANT and len(GENERIC_FEW_SHOT_4_ASSISTANT["reason"]) > 10
+
+
+

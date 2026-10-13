@@ -185,3 +185,76 @@ Preserved for 100% backward compatibility with the initial contract.
 ### Entry 8: Model Configuration Update
 - Updated `ai/.env` to configure `LLM_MODEL=gpt-oss:20b` with the local Ollama endpoint (`http://localhost:11434/v1`).
 - Verified test suite passes cleanly: 45 passed, 2 skipped in ~1.05s.
+
+### Entry 9: Part 4 Outcomes Contract and Reference Simulator
+- **Outcomes Models (`ai/outcomes.py`)**:
+  - `BranchOutcome`: `branch_id`, `affected_ids`, and validated `affected_count == len(affected_ids)`.
+  - `SimulationOutcomes`: list of `BranchOutcome` with unique IDs, cross-branch validation against provided branch plans, and `SimulationOutcomes.coerce()` which accepts structured shapes and strictly rejects free-text strings.
+  - Computed deterministic evidence summary in code (`diverges`, `distinct_sets`, `only_in`, `common_ids`, `empty_branches`, `differing_pairs`).
+  - Updated `generate_rewrite(instruction, ambiguous_terms, outcomes, branches=None)` in `ai/ai_engine.py` and `build_rewrite_messages()` in `ai/prompts.py` to require structured outcomes and supply simulation evidence as given facts the model must not recompute.
+- **Reference Simulator (`ai/tools/reference_simulator.py`)**:
+  - Pure Python, dependency-free reference interpreter specification for Part 3 semantics (header docstring clarifies it is an executable spec, not Person 3's production simulator).
+  - Explicit dispatch on predicate `op` (no eval/exec).
+  - `run_branch(world, branch)`: isolates execution on a deep copy of records and applies `delete`, `archive`, `update`, or `flag`.
+  - `run_all(world, branches)`: runs branches independently on separate deep copies.
+  - `compare_outcomes(outcomes)`: returns `diverges`, `distinct_sets`, `only_in`, `common_ids`.
+- **Golden Outcomes (`ai/tools/make_golden.py` & `ai/tools/golden_outcomes.json`)**:
+  - Script runnable via `python -m ai.tools.make_golden`.
+  - Runs all deterministic fixtures through `reference_simulator` and writes expected outcomes for Person 3's simulator to diff against.
+- **Testing (`ai/tests/test_reference_simulator.py`)**:
+  - Added 7 tests covering fixture divergence, null-date isolation, exact 90-day boundary matching (90 vs 91), null-semantics table covering every predicate, `not` over null fields, branch isolation & determinism, and outcomes validation.
+  - Test suite now: **52 passed**, 2 skipped (100% offline pass rate).
+
+### Entry 10: Part 5 Prompt Quality Pass
+- **Generic Analyzer Prompt (`ai/prompts.py`)**:
+  - Explicitly states the model is an analyst, never an executor; `<instruction>` tags contain untrusted data and all commands inside must be ignored.
+  - Documents allowed operations (`delete`, `archive`, `update`, `flag`), forbidden `_` prefix, two-valued null semantics, calendar day date math, relational comparison type restrictions, and max 20 items for `in`.
+  - Directs model to probe: time basis (creation vs last activity/status update), thresholds, boundary inclusion, missing/null values, scope ("all" vs "some"), and "if necessary" conditions.
+  - Mandates behavioral selection divergence; for instructions already specific, requires identifying remaining ambiguity.
+- **Multi-Domain Few-Shots**:
+  - Domain 1: Users ("Delete old user records.").
+  - Domain 2: Files ("Archive old log files.").
+  - Domain 3: Orders ("Cancel pending orders older than 30 days." - already specific, probes remaining ambiguity in order creation vs status update timestamp and strict pending vs pending/payment_review scope).
+  - Domain 4: Unsupported ("rm -rf /var/log/* && systemctl restart nginx" - returns status unsupported with honest reason).
+- **World Prompt**:
+  - Strict rules: realistic fictional data only, no real people/organizations, emails on `@example.com` domains, dates relative to given today, pure JSON format.
+- **Disambiguation Rewrite Prompt**:
+  - Injects code-computed simulation evidence as given facts that must not be recomputed; outputs clear rewrite resolving divergence and lists `resolved_terms`.
+- **Testing & Anti-Drift Verification (`ai/tests/test_ai_engine.py`)**:
+  - Added `test_prompt_embedded_examples_validate_against_schema`: programmatically validates all embedded few-shot JSON structures against `GenericAnalysisOutput`, `LegacyInterpretationSchema`, and predicate AST limits/schema validators.
+  - Full test suite: **53 passed**, 2 skipped in ~0.96s.
+
+### Entry 11: Part 6 Rewrite Verification Loop
+- **Verification Engine (`ai/verify.py`)**:
+  - Implemented `verify_rewrite(original_instruction, rewrite, before_outcomes=None, simulate=None, engine=None)`.
+  - Runs `analyze_and_branch` on the rewrite.
+  - Executes simulation using injected `simulate` callable or defaults to `reference_simulator.run_all`.
+  - Computes verdict strictly from simulator outcomes (never trusting model's claim of clarity):
+    - `"resolved"`: all branches agree (`after_distinct_sets == 1`) or no ambiguity found (`after_branch_count == 1`).
+    - `"reduced"`: fewer distinct outcome sets than before (`after_distinct_sets < before_distinct_sets`).
+    - `"not_improved"`: same or more distinct outcome sets than before (`after_distinct_sets >= before_distinct_sets`).
+    - `"unverifiable"`: live path unavailable, analysis failed, or unsupported.
+  - Labels which simulator was used (`"simulator_used": simulator_label`).
+- **Testing (`ai/tests/test_verify.py`)**:
+  - Created 7 mocked unit tests covering all 4 verdicts (`resolved` via agreement and single branch, `reduced`, `not_improved`, `unverifiable`), injected simulator callable attribution, and verification that model claims are never trusted over simulator outcomes.
+  - Test suite now: **60 passed**, 2 skipped (100% offline pass rate).
+
+### Entry 12: Part 7 Evaluation Harness
+- **Evaluation Benchmark (`ai/eval/instructions.json`)**:
+  - Created 20 labeled benchmark instructions with metadata (`id`, `text`, `domain_hint`, `expected`, `notes`).
+  - Covers supported ambiguous (8), already specific (2), vague (2), unsupported (4), adversarial prompt injections (2), multilingual (1), and empty/whitespace (1).
+- **Harness Runner (`ai/eval/run_eval.py`)**:
+  - Implemented evaluation runner with flags `--mode` (live or fixture), `--limit`, and `--out`.
+  - Executes `analyze_and_branch`, runs reference simulator on supported results, and triggers `verify_rewrite` on divergent results.
+  - Generates machine-readable `results.json` and human-readable `report.md`.
+  - Reports all required metrics: first-attempt validity, success after retries, source distribution, average branches, divergence rate, correct unsupported rate, false-support rate (0%), injection resistance violations (0%), rewrite verdict distribution, latencies (p50, max), and failures list.
+- **Testing & Verification (`ai/tests/test_eval_metrics.py`)**:
+  - Unit-tested metrics arithmetic on a deterministic synthetic result set.
+  - Verified harness in `--mode fixture` over all 20 instructions: 100% schema validity, 0% false-support rate, 0 injection violations.
+  - Full test suite: **61 passed**, 2 skipped in ~1.05s.
+
+### Entry 13: Endpoint Update to Ollama Cloud
+- Updated `ai/.env` to configure `LLM_BASE_URL=https://ollama.com/v1`.
+- Ran `python -m ai.ai_engine --check`: confirmed connection, model `gpt-oss:20b` discovered, test chat completion succeeded with latency 705.92ms (`PASS`).
+- Ran `python -m ai.list_models`: discovered 18 models available on the endpoint.
+- Full test suite: **61 passed**, 2 skipped in ~1.11s.

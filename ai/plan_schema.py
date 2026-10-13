@@ -470,3 +470,11 @@ def compute_affected(
     """
     affected_ids = [r["id"] for r in records if evaluate_predicate(where_pred, r, today_str)]
     return affected_ids, len(affected_ids)
+
+
+# Re-export outcomes models
+try:
+    from ai.outcomes import BranchOutcome, SimulationOutcomes
+except ImportError:
+    from outcomes import BranchOutcome, SimulationOutcomes
+
