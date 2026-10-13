@@ -129,3 +129,28 @@ Preserved for 100% backward compatibility with the initial contract.
 - Produced comprehensive audit artifact at `ai/docs/AUDIT.md` covering all 9 specific architectural, security, and schema validation questions with exact file and line references.
 - Verified test suite status: `29 passed, 2 skipped in 1.06s` (100% offline pass rate).
 
+### Entry 6: Part 2 Config and Reliability Improvements
+- **Fixed World Date**:
+  - Introduced `WORLD_TODAY` constant defaulting to `"2026-01-01"` overridable via `CHAOS_WORLD_TODAY`.
+  - Zero `datetime.now()` in pipeline.
+  - Aligned edge-case boundary thresholds in `inject_world_edge_cases()` and `convert_hardcoded_to_plan()` to exact offsets from `WORLD_TODAY` (e.g. 90-day threshold is `"2025-10-03"`).
+  - Updated all fixture dates in `ai/fixtures/ai_fixtures.json` to be consistent with `"2026-01-01"`.
+- **Time Budget & Cumulative Deadlines**:
+  - Defaults updated: `LLM_TOTAL_BUDGET_SECONDS=60.0`, `LLM_TIMEOUT_SECONDS=30.0`.
+  - In `analyze_and_branch`, sets `deadline = start + self.total_budget`.
+  - Computes `remaining = deadline - now` prior to every LLM call; aborts live pipeline and routes to fallback with `fallback_reason="time budget exceeded"` if `remaining <= 0`.
+  - Clamps each call's timeout to `min(self.timeout, remaining)`.
+  - Added additive field `"timings_ms"` with per-stage latencies (`analyze`, `world`, `branches`, `total`).
+- **Model Configuration & CLI Check**:
+  - Removed hardcoded default model ID `"qwen2.5:7b"`.
+  - If `LLM_MODEL` is unset in live mode, raises clear config error directing user to run `python -m ai.list_models`.
+  - Fixture mode continues to work with no model configured.
+  - Implemented `python -m ai.ai_engine --check` health check runner (prints base URL, checks GET /models, executes ping chat completion, measures latency, provides human-readable failure messages for 401, 403, 404, 429, timeout, connection errors).
+  - Updated `ai/.env.example` with DigitalOcean primary, Ollama commented out, model placeholder, and all timing/budget parameters.
+- **Housekeeping**:
+  - Updated `ai/.gitignore` to ignore `.env`, `__pycache__`, `.pytest_cache`, and `eval/results/`, `ai/eval/results/`.
+- **Testing**:
+  - Added 6 new unit tests for mocked system date invariance, budget-bounded execution, model config validation, fixture mode without model, timings_ms validation, and `--check` CLI functionality.
+  - Total test suite: 35 passed, 2 skipped (100% pass rate).
+
+

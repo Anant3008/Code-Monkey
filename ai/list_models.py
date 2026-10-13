@@ -2,7 +2,7 @@
 """
 Utility script to list available models on the configured OpenAI-compatible endpoint.
 Usage:
-    python backend/list_models.py
+    python -m ai.list_models
 """
 import os
 import sys

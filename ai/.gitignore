@@ -24,6 +24,10 @@ wheels/
 .coverage
 htmlcov/
 
+# Evaluation Results
+eval/results/
+ai/eval/results/
+
 # Environment variables
 .env
 

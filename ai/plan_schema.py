@@ -7,8 +7,14 @@ NO CODE, SQL, OR SHELL EXPRESSIONS ALLOWED.
 All operations, types, and predicate operators are strictly allowlisted.
 """
 
+import os
 from typing import Dict, Any, List, Optional, Literal, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+# ---------------------------------------------------------------------------
+# Global Reference Date
+# ---------------------------------------------------------------------------
+WORLD_TODAY = os.getenv("CHAOS_WORLD_TODAY", "2026-01-01")
 
 # ---------------------------------------------------------------------------
 # Allowlist Definitions
@@ -207,7 +213,7 @@ class WorldRecord(BaseModel):
 
 class World(BaseModel):
     entity: str
-    today: str = Field(default="2026-10-13", description="Fixed reference date for reproducibility (YYYY-MM-DD)")
+    today: str = Field(default_factory=lambda: os.getenv("CHAOS_WORLD_TODAY", "2026-01-01"), description="Fixed reference date for reproducibility (YYYY-MM-DD)")
     records: List[Dict[str, Any]] = Field(..., min_length=1, max_length=14)
 
     @field_validator("records")

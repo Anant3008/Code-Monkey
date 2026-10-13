@@ -253,24 +253,30 @@ def build_generic_analyze_messages(instruction: str) -> List[Dict[str, str]]:
     ]
 
 
-WORLD_GEN_PROMPT = """You are a synthetic data generator for Semantic Chaos Monkey.
-Given an entity schema, generate exactly 8 fictional records with realistic test values.
-Reference date today is fixed at: 2026-10-13.
-Date fields must be formatted as YYYY-MM-DD.
-Every record must have a unique 'id' (e.g. 'REC-01', 'REC-02', etc.).
-Output JSON only with format:
-{"records": [{"id": "...", ...}, ...]}
-"""
+import os
+
+def get_world_today() -> str:
+    return os.getenv("CHAOS_WORLD_TODAY", "2026-01-01")
 
 def build_world_gen_messages(entity_name: str, fields: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """Builds chat messages to synthesize base records for an entity schema."""
+    ref_today = get_world_today()
+    system_prompt = (
+        "You are a synthetic data generator for Semantic Chaos Monkey.\n"
+        "Given an entity schema, generate exactly 8 fictional records with realistic test values.\n"
+        f"Reference date today is fixed at: {ref_today}.\n"
+        "Date fields must be formatted as YYYY-MM-DD.\n"
+        "Every record must have a unique 'id' (e.g. 'REC-01', 'REC-02', etc.).\n"
+        "Output JSON only with format:\n"
+        '{"records": [{"id": "...", ...}, ...]}'
+    )
     user_payload = {
         "entity": entity_name,
         "fields": fields,
-        "today": "2026-10-13"
+        "today": ref_today
     }
     return [
-        {"role": "system", "content": WORLD_GEN_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": json.dumps(user_payload)}
     ]
 

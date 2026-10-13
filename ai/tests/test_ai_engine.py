@@ -20,6 +20,13 @@ from ai_engine import (
 from prompts import build_analysis_messages
 
 
+@pytest.fixture(autouse=True)
+def default_test_env(monkeypatch):
+    """Sets default mock environment for unit tests."""
+    monkeypatch.setenv("LLM_MODEL", "mock-model")
+    monkeypatch.setenv("CHAOS_WORLD_TODAY", "2026-01-01")
+
+
 @pytest.fixture
 def mock_valid_response_data():
     return {
@@ -505,7 +512,7 @@ def test_branch_builder_single_branch_warning():
 
 
 def test_edge_case_injection_adds_required_records():
-    """Injects null date, threshold boundary, and no-match records."""
+    """Injects null date, threshold boundary (2025-10-03), and no-match records (2026-01-01)."""
     from plan_schema import EntitySchema, FieldDefinition
     engine = AIEngine(fixture_mode=True)
     schema = EntitySchema(
@@ -524,8 +531,142 @@ def test_edge_case_injection_adds_required_records():
     assert len(injected_only) == 3
 
     assert any(r.get("created_at") is None for r in injected_only)
-    assert any(r.get("created_at") == "2026-07-15" for r in injected_only)
-    assert any(r.get("created_at") == "2026-10-13" for r in injected_only)
+    assert any(r.get("created_at") == "2025-10-03" for r in injected_only)
+    assert any(r.get("created_at") == "2026-01-01" for r in injected_only)
+
+
+# ---------------------------------------------------------------------------
+# Part 2 Specific Reliability & Configuration Tests
+# ---------------------------------------------------------------------------
+
+def test_different_mocked_system_dates_produce_identical_worlds():
+    """Two runs under different mocked system dates produce 100% identical worlds."""
+    from plan_schema import EntitySchema, FieldDefinition
+    from datetime import date as dt_date
+    schema = EntitySchema(
+        name="test_entity",
+        fields=[
+            FieldDefinition(name="id", type="string"),
+            FieldDefinition(name="created_at", type="date"),
+            FieldDefinition(name="status", type="string")
+        ]
+    )
+    base = [{"id": f"REC-{i}", "created_at": "2025-01-01", "status": "active"} for i in range(4)]
+    engine = AIEngine(fixture_mode=True)
+
+    # Run 1: with system date mocked to 2010-05-15
+    with patch("datetime.date") as mock_date:
+        mock_date.fromisoformat = dt_date.fromisoformat
+        mock_date.today.return_value = dt_date(2010, 5, 15)
+        world1 = engine.inject_world_edge_cases(schema, base)
+
+    # Run 2: with system date mocked to 2035-12-31
+    with patch("datetime.date") as mock_date:
+        mock_date.fromisoformat = dt_date.fromisoformat
+        mock_date.today.return_value = dt_date(2035, 12, 31)
+        world2 = engine.inject_world_edge_cases(schema, base)
+
+    assert world1 == world2
+    # Verify boundary record sits on exact 90-day threshold before 2026-01-01
+    assert any(r.get("created_at") == "2025-10-03" for r in world1)
+
+
+def test_slow_client_never_exceeds_budget():
+    """Mocked slow client never exceeds budget by more than tolerance and sets fallback_reason."""
+    import time
+
+    def slow_create(*args, **kwargs):
+        # Emulate slow call that takes longer than budget
+        time.sleep(0.08)
+        raise Exception("Call timed out")
+
+    client = MagicMock()
+    client.chat.completions.create.side_effect = slow_create
+
+    engine = AIEngine(
+        fixture_mode=False,
+        client=client,
+        api_key="live-key",
+        model="mock-model",
+        total_budget_seconds=0.05,
+        timeout=0.02
+    )
+
+    t0 = time.time()
+    res = engine.analyze_and_branch("Delete old user records.")
+    elapsed = time.time() - t0
+
+    assert res["source"] == "fixture_fallback"
+    assert res["fallback_reason"] == "time budget exceeded"
+    # Small tolerance check: budget was 0.05s, execution should bail quickly
+    assert elapsed < 0.25
+    assert "timings_ms" in res
+
+
+def test_missing_model_raises_config_error_in_live_mode(monkeypatch):
+    """If LLM_MODEL is unset in live mode, raises clear config error mentioning python -m ai.list_models."""
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    client = MagicMock()
+
+    with pytest.raises(AIEngineError) as exc_info:
+        AIEngine(fixture_mode=False, client=client, api_key="live-key", model=None)
+
+    assert "LLM_MODEL is unset in live mode" in str(exc_info.value)
+    assert "python -m ai.list_models" in str(exc_info.value)
+
+
+def test_fixture_mode_works_without_model(monkeypatch):
+    """Fixture mode works cleanly even if LLM_MODEL is completely unset."""
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    engine = AIEngine(fixture_mode=True, model=None)
+
+    res = engine.analyze_and_branch("Delete old user records.")
+    assert res["status"] == "ok"
+    assert res["source"] == "fixture_fallback"
+    assert res["model_info"]["mode"] == "fixture"
+
+
+def test_timings_ms_present_in_results(sample_generic_analysis_output):
+    """Timings_ms dictionary is present with per-stage timings."""
+    mock_world_resp = {"records": [{"id": f"U0{i}", "email": f"u{i}@test.com", "created_at": "2025-01-01", "last_active_at": "2025-12-01"} for i in range(1, 9)]}
+    client = make_mock_client(responses=[
+        json.dumps(sample_generic_analysis_output),
+        json.dumps(mock_world_resp)
+    ])
+
+    engine = AIEngine(fixture_mode=False, client=client, api_key="live-key", model="mock-model")
+    res = engine.analyze_and_branch("Delete old user records.")
+
+    assert "timings_ms" in res
+    assert "analyze" in res["timings_ms"]
+    assert "world" in res["timings_ms"]
+    assert "branches" in res["timings_ms"]
+    assert "total" in res["timings_ms"]
+
+
+def test_cli_health_check_flag(monkeypatch):
+    """Tests the --check CLI health check helper function."""
+    from ai_engine import run_check
+
+    monkeypatch.setenv("LLM_MODEL", "mock-model")
+    monkeypatch.setenv("LLM_API_KEY", "mock-key")
+    monkeypatch.setenv("LLM_BASE_URL", "https://mock.ai/v1")
+
+    with patch("ai_engine.OpenAI") as mock_openai_cls:
+        mock_client = MagicMock()
+        mock_model_obj = MagicMock()
+        mock_model_obj.id = "mock-model"
+        mock_client.models.list.return_value.data = [mock_model_obj]
+
+        mock_choice = MagicMock()
+        mock_choice.message.content = "pong"
+        mock_resp = MagicMock()
+        mock_resp.choices = [mock_choice]
+        mock_client.chat.completions.create.return_value = mock_resp
+
+        mock_openai_cls.return_value = mock_client
+        exit_code = run_check()
+        assert exit_code == 0
 
 
 @pytest.mark.skipif(
@@ -539,3 +680,4 @@ def test_live_generic_instructions():
         res = engine.analyze_and_branch(inst)
         assert res["status"] == "ok"
         assert res["source"] in ("live_generic", "live_hardcoded", "fixture_fallback")
+

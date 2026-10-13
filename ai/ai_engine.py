@@ -7,10 +7,19 @@ import time
 from copy import deepcopy
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Literal, Set, Tuple
+from typing import Dict, Any, List, Optional, Literal, Set, Tuple, Union
 
 from pydantic import BaseModel, Field, field_validator, ValidationError
-from openai import OpenAI, APIError, APITimeoutError, AuthenticationError, RateLimitError
+from openai import (
+    OpenAI,
+    APIError,
+    APITimeoutError,
+    AuthenticationError,
+    RateLimitError,
+    PermissionDeniedError,
+    NotFoundError,
+    APIConnectionError
+)
 
 try:
     from ai.prompts import (
@@ -29,7 +38,8 @@ try:
         GenericAnalysisOutput,
         parse_predicate,
         validate_predicate_limits,
-        validate_predicate_schema
+        validate_predicate_schema,
+        WORLD_TODAY
     )
 except ImportError:
     from prompts import (
@@ -48,7 +58,8 @@ except ImportError:
         GenericAnalysisOutput,
         parse_predicate,
         validate_predicate_limits,
-        validate_predicate_schema
+        validate_predicate_schema,
+        WORLD_TODAY
     )
 
 logger = logging.getLogger("semantic_chaos_monkey.ai_engine")
@@ -61,7 +72,22 @@ ALLOWED_ACTION_TYPE = "delete_users"
 ALLOWED_CONDITIONS = {"inactive_90_days", "created_90_days", "inactive_or_unknown"}
 SUPPORTED_SCENARIOS = {"user_cleanup"}
 UNSUPPORTED_KEYWORDS = ["drop table", "drop database", "restart", "deploy", "server", "format disk"]
-FIXED_TODAY = "2026-10-13"
+
+def get_world_today() -> str:
+    """Returns the reproducible world reference date (YYYY-MM-DD), overridable via env."""
+    return os.getenv("CHAOS_WORLD_TODAY", "2026-01-01")
+
+
+def sanitize_secret_text(text: str, api_key: Optional[str] = None) -> str:
+    """Removes API keys, bearer tokens, and credentials from log/error messages."""
+    if not text:
+        return ""
+    cleaned = str(text)
+    if api_key and len(api_key.strip()) > 4:
+        cleaned = cleaned.replace(api_key.strip(), "[REDACTED_API_KEY]")
+    cleaned = re.sub(r'(?i)bearer\s+[a-zA-Z0-9_\-\.]{8,}', 'Bearer [REDACTED]', cleaned)
+    cleaned = re.sub(r'sk-[a-zA-Z0-9_\-]{15,}', 'sk-[REDACTED]', cleaned)
+    return cleaned
 
 
 class AIEngineError(Exception):
@@ -144,6 +170,7 @@ class AIEngine:
     1. Primary Generic Pipeline: Arbitrary instructions -> Entity Schema -> World -> Branches (Cap 8).
     2. Reliable Demo Fallback: Hardcoded user_cleanup path + deterministic fixtures.
     3. Source Labeling: Every result carries source ("live_generic", "live_hardcoded", "fixture_fallback").
+    4. Time Budget & Deadlines: Enforced strictly per-call and cumulatively.
     """
 
     def __init__(
@@ -160,13 +187,13 @@ class AIEngine:
         client: Optional[OpenAI] = None
     ):
         self.base_url = (base_url or os.getenv("LLM_BASE_URL", "https://inference.do-ai.run/v1")).rstrip("/")
-        self.model = model or os.getenv("LLM_MODEL", "qwen2.5:7b")
+        self.model = model or os.getenv("LLM_MODEL", "")
         self.api_key = api_key or os.getenv("LLM_API_KEY", "")
-        self.timeout = float(timeout or os.getenv("LLM_TIMEOUT_SECONDS", "60.0"))
+        self.timeout = float(timeout or os.getenv("LLM_TIMEOUT_SECONDS", "30.0"))
         self.max_retries = int(max_retries or os.getenv("LLM_MAX_RETRIES", "2"))
         self.max_tokens = int(max_tokens or os.getenv("LLM_MAX_TOKENS", "2000"))
         self.temperature = float(temperature or os.getenv("LLM_TEMPERATURE", "0.4"))
-        self.total_budget = float(total_budget_seconds or os.getenv("LLM_TOTAL_BUDGET_SECONDS", "45.0"))
+        self.total_budget = float(total_budget_seconds or os.getenv("LLM_TOTAL_BUDGET_SECONDS", "60.0"))
 
         # Demo switch flags
         env_fixture = os.getenv("CHAOS_FIXTURE_MODE", "").lower() in ("true", "1", "yes")
@@ -178,6 +205,10 @@ class AIEngine:
             self.fixture_mode = True
         else:
             self.fixture_mode = False
+
+        # Validate model in live mode
+        if not self.fixture_mode and not self.force_fallback and not self.model:
+            raise AIEngineError("LLM_MODEL is unset in live mode. Run 'python -m ai.list_models' to discover available models and set LLM_MODEL in .env")
 
         self._client = client
         self._fixtures: Optional[Dict[str, Any]] = None
@@ -201,7 +232,7 @@ class AIEngine:
                 with open(fixture_path, "r", encoding="utf-8") as f:
                     self._fixtures = json.load(f)
             except Exception as e:
-                logger.error(f"Failed to load fixtures: {e}")
+                logger.error(f"Failed to load fixtures: {sanitize_secret_text(str(e), self.api_key)}")
                 self._fixtures = {}
         else:
             self._fixtures = {}
@@ -244,15 +275,17 @@ class AIEngine:
         2. Boundary records at exact threshold (e.g. 90 days ago).
         3. A guaranteed no-match record.
         Capped at 14 records total.
+        Uses get_world_today() for reproducible threshold calculation.
         """
         records = list(base_records)[:9]  # reserve room for edge cases
         date_fields = [f.name for f in entity_schema.fields if f.type == "date"]
-        today = date.fromisoformat(FIXED_TODAY)
+        ref_today = get_world_today()
+        today = date.fromisoformat(ref_today)
 
         # 1. Null date record
         if date_fields:
             target_df = date_fields[-1]
-            null_rec = {"id": f"INJ-NULL-01", "_injected": True}
+            null_rec = {"id": "INJ-NULL-01", "_injected": True}
             for f in entity_schema.fields:
                 if f.name == "id":
                     continue
@@ -353,7 +386,7 @@ class AIEngine:
             return [plan], warnings
 
         combinations = []
-        
+
         # 1. Baseline: First meaning of each term
         baseline_combo = {t.term: t.meanings[0] for t in ambiguous_terms}
         combinations.append(baseline_combo)
@@ -388,7 +421,7 @@ class AIEngine:
 
             # Resolve template
             resolved_where = substitute_term_refs(operation_template.where_template, meaning_pred_map)
-            
+
             # Normalize and dedup
             normalized = normalize_predicate_dict(resolved_where)
             norm_key = json.dumps(normalized, sort_keys=True)
@@ -426,19 +459,39 @@ class AIEngine:
     # Generic Pipeline Execution
     # -----------------------------------------------------------------------
 
-    def _execute_generic_pipeline(self, instruction: str) -> Dict[str, Any]:
-        """Executes LLM Analyze -> World -> Code Edge Cases -> Branch Builder."""
+    def _execute_generic_pipeline(
+        self,
+        instruction: str,
+        deadline: Optional[float] = None,
+        timings_ms: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
+        """Executes LLM Analyze -> World -> Code Edge Cases -> Branch Builder within budget."""
+        if timings_ms is None:
+            timings_ms = {}
+
+        if not self.model:
+            raise AIEngineError("LLM_MODEL is unset in live mode. Run 'python -m ai.list_models' to discover available models and set LLM_MODEL in .env")
+
         client = self._get_client()
 
         # Step 1: Analyze
+        remaining = (deadline - time.time()) if deadline else self.total_budget
+        if remaining <= 0:
+            raise AIEngineError("time budget exceeded")
+        call_timeout = min(self.timeout, remaining)
+
         analyze_messages = build_generic_analyze_messages(instruction)
+        t0 = time.time()
         resp = client.chat.completions.create(
             model=self.model,
             messages=analyze_messages,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            timeout=call_timeout
         )
+        timings_ms["analyze"] = round((time.time() - t0) * 1000, 2)
+
         content = resp.choices[0].message.content or ""
         parsed = self._clean_and_parse_json(content)
 
@@ -456,17 +509,26 @@ class AIEngine:
         field_types = analysis_out.entity_schema.get_field_types()
 
         # Step 2: Generate World Records via LLM
+        remaining = (deadline - time.time()) if deadline else self.total_budget
+        if remaining <= 0:
+            raise AIEngineError("time budget exceeded")
+        call_timeout = min(self.timeout, remaining)
+
         world_messages = build_world_gen_messages(
             analysis_out.entity_schema.name,
             [f.model_dump() for f in analysis_out.entity_schema.fields]
         )
+        t1 = time.time()
         world_resp = client.chat.completions.create(
             model=self.model,
             messages=world_messages,
             temperature=self.temperature,
             max_tokens=1500,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            timeout=call_timeout
         )
+        timings_ms["world"] = round((time.time() - t1) * 1000, 2)
+
         world_content = world_resp.choices[0].message.content or ""
         parsed_world = self._clean_and_parse_json(world_content)
         base_records = parsed_world.get("records", [])
@@ -477,16 +539,18 @@ class AIEngine:
         injected_records = self.inject_world_edge_cases(analysis_out.entity_schema, base_records)
         world = World(
             entity=analysis_out.entity_schema.name,
-            today=FIXED_TODAY,
+            today=get_world_today(),
             records=injected_records
         )
 
         # Step 4: Combine Branches (Pure Code)
+        t2 = time.time()
         branches, warnings = self.build_branches(
             analysis_out.ambiguous_terms,
             analysis_out.operation_template,
             field_types
         )
+        timings_ms["branches"] = round((time.time() - t2) * 1000, 2)
 
         return {
             "status": "ok",
@@ -511,7 +575,19 @@ class AIEngine:
         Converts legacy 3-condition output (A/B/C) into universal plan_schema format:
         Creates an EntitySchema for 'user', fixed 10-user World with edge cases,
         and BranchPlans using allowlisted older_than_days and is_null predicates.
+        Aligns dates relative to get_world_today().
         """
+        ref_today = get_world_today()
+        today = date.fromisoformat(ref_today)
+        d_90 = (today - timedelta(days=90)).isoformat()
+        d_12 = (today - timedelta(days=12)).isoformat()
+        d_2 = (today - timedelta(days=2)).isoformat()
+        d_4 = (today - timedelta(days=4)).isoformat()
+        d_15 = (today - timedelta(days=15)).isoformat()
+        d_240 = (today - timedelta(days=240)).isoformat()
+        d_350 = (today - timedelta(days=350)).isoformat()
+        d_280 = (today - timedelta(days=280)).isoformat()
+
         out = dict(hardcoded_data)
         out["domain"] = "user_management"
         out["entity_schema"] = {
@@ -526,18 +602,18 @@ class AIEngine:
         }
         out["world"] = {
             "entity": "user",
-            "today": FIXED_TODAY,
+            "today": ref_today,
             "records": [
-                {"id": "U01", "email": "alice@corp.com", "created_at": "2025-01-10", "last_active_at": "2026-10-10", "status": "active"},
-                {"id": "U02", "email": "bob@dormant.com", "created_at": "2024-05-01", "last_active_at": "2026-05-01", "status": "dormant"},
-                {"id": "U03", "email": "carol@active.org", "created_at": "2026-01-15", "last_active_at": "2026-10-12", "status": "active"},
-                {"id": "U04", "email": "dave@old.io", "created_at": "2023-11-20", "last_active_at": "2026-01-10", "status": "dormant"},
-                {"id": "U05", "email": "eve@recent.com", "created_at": "2026-09-01", "last_active_at": "2026-09-20", "status": "active"},
-                {"id": "U06", "email": "frank@test.net", "created_at": "2025-08-14", "last_active_at": "2026-03-15", "status": "active"},
-                {"id": "U07", "email": "grace@loyal.com", "created_at": "2024-02-11", "last_active_at": "2026-10-11", "status": "active"},
-                {"id": "U08", "email": "heidi@edge.org", "created_at": "2026-07-15", "last_active_at": "2026-07-15", "status": "active", "_injected": True},
-                {"id": "U09", "email": "ivan@null.com", "created_at": "2025-10-01", "last_active_at": None, "status": "pending", "_injected": True},
-                {"id": "U10", "email": "judy@boundary.com", "created_at": "2026-07-15", "last_active_at": "2026-07-15", "status": "active", "_injected": True}
+                {"id": "U01", "email": "alice@corp.com", "created_at": (today - timedelta(days=350)).isoformat(), "last_active_at": d_12, "status": "active"},
+                {"id": "U02", "email": "bob@dormant.com", "created_at": (today - timedelta(days=600)).isoformat(), "last_active_at": d_240, "status": "dormant"},
+                {"id": "U03", "email": "carol@active.org", "created_at": (today - timedelta(days=350)).isoformat(), "last_active_at": d_2, "status": "active"},
+                {"id": "U04", "email": "dave@old.io", "created_at": (today - timedelta(days=700)).isoformat(), "last_active_at": d_350, "status": "dormant"},
+                {"id": "U05", "email": "eve@recent.com", "created_at": (today - timedelta(days=60)).isoformat(), "last_active_at": d_15, "status": "active"},
+                {"id": "U06", "email": "frank@test.net", "created_at": (today - timedelta(days=140)).isoformat(), "last_active_at": d_280, "status": "active"},
+                {"id": "U07", "email": "grace@loyal.com", "created_at": (today - timedelta(days=680)).isoformat(), "last_active_at": d_4, "status": "active"},
+                {"id": "U08", "email": "heidi@edge.org", "created_at": d_90, "last_active_at": d_90, "status": "active", "_injected": True},
+                {"id": "U09", "email": "ivan@null.com", "created_at": (today - timedelta(days=90)).isoformat(), "last_active_at": None, "status": "pending", "_injected": True},
+                {"id": "U10", "email": "judy@boundary.com", "created_at": d_90, "last_active_at": d_90, "status": "active", "_injected": True}
             ]
         }
 
@@ -575,22 +651,41 @@ class AIEngine:
     # Existing Hardcoded Demo Path (PRESERVED UNCHANGED)
     # -----------------------------------------------------------------------
 
-    def _call_hardcoded_model(self, instruction: str, scenario: str) -> Dict[str, Any]:
-        """Calls the hardcoded demo path with bounded retries."""
+    def _call_hardcoded_model(
+        self,
+        instruction: str,
+        scenario: str,
+        deadline: Optional[float] = None,
+        timings_ms: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
+        """Calls the hardcoded demo path with bounded retries and timeout enforcement."""
+        if not self.model:
+            raise AIEngineError("LLM_MODEL is unset in live mode. Run 'python -m ai.list_models' to discover available models and set LLM_MODEL in .env")
+
         client = self._get_client()
         messages = build_analysis_messages(instruction, scenario)
         warnings = []
         last_error = ""
 
         for attempt in range(self.max_retries + 1):
+            remaining = (deadline - time.time()) if deadline else self.total_budget
+            if remaining <= 0:
+                raise AIEngineError("time budget exceeded")
+            call_timeout = min(self.timeout, remaining)
+
             try:
+                t0 = time.time()
                 resp = client.chat.completions.create(
                     model=self.model,
                     messages=messages,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
+                    timeout=call_timeout
                 )
+                if timings_ms is not None:
+                    timings_ms["hardcoded_call"] = round((time.time() - t0) * 1000, 2)
+
                 content = resp.choices[0].message.content or ""
                 parsed = self._clean_and_parse_json(content)
 
@@ -625,7 +720,9 @@ class AIEngine:
                     parsed["warnings"] = warnings
                 return parsed
             except Exception as e:
-                last_error = str(e)
+                last_error = sanitize_secret_text(str(e), self.api_key)
+                if "time budget exceeded" in last_error.lower():
+                    raise AIEngineError("time budget exceeded")
                 if attempt == self.max_retries:
                     raise AIEngineError(f"Hardcoded path failed after retries: {last_error}")
         raise AIEngineError(f"Hardcoded path failed: {last_error}")
@@ -646,7 +743,7 @@ class AIEngine:
         if match:
             res = deepcopy(match)
             res["source"] = "fixture_fallback"
-            res["model_info"] = {"model": self.model, "mode": "fixture"}
+            res["model_info"] = {"model": self.model or "fixture", "mode": "fixture"}
             return res
 
         return {
@@ -658,7 +755,7 @@ class AIEngine:
             "candidate_ambiguities": [],
             "branches": [],
             "suggested_rewrite": "",
-            "model_info": {"model": self.model, "mode": "fixture"}
+            "model_info": {"model": self.model or "fixture", "mode": "fixture"}
         }
 
     # -----------------------------------------------------------------------
@@ -674,11 +771,18 @@ class AIEngine:
         """
         Public Router for the Generic Pipeline with Labeled Fallbacks:
         1. If CHAOS_FORCE_FALLBACK=true or force_fallback=True or no API key -> fixture_fallback.
-        2. Try live generic pipeline -> live_generic.
-        3. If generic fails/times out -> fallback to hardcoded path (live_hardcoded or fixture_fallback).
-        4. Budget enforcement with LLM_TOTAL_BUDGET_SECONDS.
+        2. Deadline calculation: deadline = start + self.total_budget.
+        3. Try live generic pipeline -> live_generic (timeout capped by min(LLM_TIMEOUT, remaining)).
+        4. If budget exceeded (remaining <= 0) -> fallback with fallback_reason='time budget exceeded'.
+        5. If generic fails -> fallback to hardcoded path (live_hardcoded or fixture_fallback).
+        6. Emits timings_ms with per-stage latencies (analyze, world, branches, total).
         """
         start_time = time.time()
+        deadline = start_time + self.total_budget
+        timings_ms: Dict[str, float] = {}
+
+        def get_remaining() -> float:
+            return deadline - time.time()
 
         # Step 1: Demo Switch / Fixture Check
         if self.force_fallback or force_fallback or self.fixture_mode or not self.api_key:
@@ -686,35 +790,70 @@ class AIEngine:
             res["source"] = "fixture_fallback"
             if force_fallback or self.force_fallback:
                 res["fallback_reason"] = "CHAOS_FORCE_FALLBACK switch enabled"
+            timings_ms["total"] = round((time.time() - start_time) * 1000, 2)
+            res["timings_ms"] = timings_ms
+            return res
+
+        # Check budget before live path
+        if get_remaining() <= 0:
+            res = self._get_fixture(instruction)
+            res["source"] = "fixture_fallback"
+            res["fallback_reason"] = "time budget exceeded"
+            timings_ms["total"] = round((time.time() - start_time) * 1000, 2)
+            res["timings_ms"] = timings_ms
             return res
 
         # Step 2: Try Generic Pipeline
+        fallback_err = None
         try:
-            if time.time() - start_time > self.total_budget:
-                raise AIEngineError("Exceeded total time budget before generic analysis.")
-
-            generic_result = self._execute_generic_pipeline(instruction)
+            generic_result = self._execute_generic_pipeline(instruction, deadline=deadline, timings_ms=timings_ms)
             if generic_result.get("status") == "ok":
+                timings_ms["total"] = round((time.time() - start_time) * 1000, 2)
+                generic_result["timings_ms"] = timings_ms
                 return generic_result
             fallback_err = generic_result.get("reason", "Generic analyzer returned unsupported.")
         except Exception as e:
-            fallback_err = str(e)
+            fallback_err = sanitize_secret_text(str(e), self.api_key)
             logger.warning(f"Generic pipeline failed ({fallback_err}). Initiating fallback routing.")
 
-        # Step 3: Fallback Routing
+        # Check if budget was exceeded during generic pipeline
+        if get_remaining() <= 0 or "time budget exceeded" in str(fallback_err).lower():
+            res = self._get_fixture(instruction)
+            res["source"] = "fixture_fallback"
+            res["fallback_reason"] = "time budget exceeded"
+            timings_ms["total"] = round((time.time() - start_time) * 1000, 2)
+            res["timings_ms"] = timings_ms
+            return res
+
+        # Step 3: Hardcoded Fallback Routing
         if self.is_user_cleanup(instruction) or scenario == "user_cleanup":
             try:
-                if time.time() - start_time > self.total_budget:
-                    raise AIEngineError("Exceeded total time budget.")
-                hardcoded_live = self._call_hardcoded_model(instruction, "user_cleanup")
+                if get_remaining() <= 0:
+                    raise AIEngineError("time budget exceeded")
+                hardcoded_live = self._call_hardcoded_model(instruction, "user_cleanup", deadline=deadline, timings_ms=timings_ms)
                 hardcoded_plan = self.convert_hardcoded_to_plan(hardcoded_live)
                 hardcoded_plan["source"] = "live_hardcoded"
                 hardcoded_plan["fallback_reason"] = f"Generic pipeline failed ({fallback_err})"
+                timings_ms["total"] = round((time.time() - start_time) * 1000, 2)
+                hardcoded_plan["timings_ms"] = timings_ms
                 return hardcoded_plan
             except Exception as h_err:
-                logger.warning(f"Live hardcoded path also failed ({h_err}). Falling back to fixtures.")
+                sanitized_h = sanitize_secret_text(str(h_err), self.api_key)
+                if "time budget exceeded" in sanitized_h.lower() or get_remaining() <= 0:
+                    fallback_err = "time budget exceeded"
+                else:
+                    logger.warning(f"Live hardcoded path also failed ({sanitized_h}). Falling back to fixtures.")
 
+        # Step 4: Deterministic Fixtures Fallback
         fixture_res = self._get_fixture(instruction)
+        timings_ms["total"] = round((time.time() - start_time) * 1000, 2)
+        fixture_res["timings_ms"] = timings_ms
+
+        if get_remaining() <= 0 or fallback_err == "time budget exceeded":
+            fixture_res["source"] = "fixture_fallback"
+            fixture_res["fallback_reason"] = "time budget exceeded"
+            return fixture_res
+
         if fixture_res.get("status") == "ok":
             fixture_res["source"] = "fixture_fallback"
             fixture_res["fallback_reason"] = f"Live models failed ({fallback_err})"
@@ -729,7 +868,8 @@ class AIEngine:
             "candidate_ambiguities": [],
             "branches": [],
             "suggested_rewrite": "",
-            "model_info": {"model": self.model, "mode": "fixture"}
+            "timings_ms": timings_ms,
+            "model_info": {"model": self.model or "fixture", "mode": "fixture"}
         }
 
     # -----------------------------------------------------------------------
@@ -746,7 +886,7 @@ class AIEngine:
         Generates a clear, disambiguated rewrite after branches have been simulated.
         Outcomes are read-only evidence.
         """
-        if self.fixture_mode or not self.api_key or self.force_fallback:
+        if self.fixture_mode or not self.api_key or self.force_fallback or not self.model:
             return {
                 "suggested_rewrite": f"Explicitly clarify thresholds and criteria for {', '.join(t.get('term', '') for t in ambiguous_terms)}.",
                 "resolved_terms": [t.get("term", "") for t in ambiguous_terms]
@@ -760,12 +900,13 @@ class AIEngine:
                 messages=messages,
                 temperature=self.temperature,
                 max_tokens=600,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
+                timeout=self.timeout
             )
             content = resp.choices[0].message.content or ""
             return self._clean_and_parse_json(content)
         except Exception as e:
-            logger.warning(f"Rewrite generation failed: {e}")
+            logger.warning(f"Rewrite generation failed: {sanitize_secret_text(str(e), self.api_key)}")
             return {
                 "suggested_rewrite": f"Clarify thresholds, inclusion dates, and null handling for {instruction}.",
                 "resolved_terms": [t.get("term", "") for t in ambiguous_terms]
@@ -777,7 +918,7 @@ class AIEngine:
 
     def generate_interpretations(self, instruction: str, scenario: str = "user_cleanup") -> Dict[str, Any]:
         """Preserved hardcoded path with honest source labeling."""
-        if self.force_fallback or self.fixture_mode or not self.api_key:
+        if self.force_fallback or self.fixture_mode or not self.api_key or not self.model:
             res = self._get_fixture(instruction)
             res["source"] = "fixture_fallback"
             return res
@@ -785,9 +926,10 @@ class AIEngine:
         try:
             return self._call_hardcoded_model(instruction, scenario)
         except Exception as err:
-            logger.warning(f"Live hardcoded call failed: {err}. Serving fixture.")
+            sanitized = sanitize_secret_text(str(err), self.api_key)
+            logger.warning(f"Live hardcoded call failed: {sanitized}. Serving fixture.")
             fix = self._get_fixture(instruction)
-            fix["fallback_reason"] = str(err)
+            fix["fallback_reason"] = sanitized
             fix["source"] = "fixture_fallback"
             return fix
 
@@ -798,20 +940,126 @@ class AIEngine:
 
 _engine = AIEngine()
 
+
 def analyze_and_branch(instruction: str, scenario: str = "auto", force_fallback: bool = False) -> Dict[str, Any]:
     """New Primary Hybrid Entry Point."""
     return _engine.analyze_and_branch(instruction, scenario, force_fallback)
 
+
 def generate_interpretations(instruction: str, scenario: str = "user_cleanup") -> Dict[str, Any]:
     """Preserved Legacy Hardcoded Entry Point."""
     return _engine.generate_interpretations(instruction, scenario)
+
 
 def generate_rewrite(instruction: str, ambiguous_terms: List[Dict[str, Any]], outcomes: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Generates rewrite after simulation."""
     return _engine.generate_rewrite(instruction, ambiguous_terms, outcomes)
 
 
+# ---------------------------------------------------------------------------
+# Health Check CLI Runner
+# ---------------------------------------------------------------------------
+
+def run_check() -> int:
+    """
+    Health check for the configured LLM endpoint and model.
+    Prints base URL (never keys), checks GET /models, runs a tiny chat completion test.
+    """
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    base_url = os.getenv("LLM_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
+    model = os.getenv("LLM_MODEL", "")
+    api_key = os.getenv("LLM_API_KEY", "")
+
+    print("=== Semantic Chaos Monkey: AI Engine Health Check ===")
+    print(f"Base URL: {base_url}")
+    print(f"API Key: {'[CONFIGURED]' if api_key else '[NOT CONFIGURED]'}")
+
+    if not model or model == "REPLACE_WITH_ID_FROM_list_models":
+        print("\nFAIL: LLM_MODEL is unset or placeholder. Run 'python -m ai.list_models' to discover available models and set LLM_MODEL in .env.")
+        return 1
+
+    print(f"Configured Model: {model}")
+
+    client = OpenAI(base_url=base_url, api_key=api_key or "no-key", timeout=15.0)
+
+    # 1. Check GET /models
+    print("\n[Step 1/2] Checking GET /models endpoint...")
+    try:
+        models = client.models.list()
+        model_ids = [m.id for m in models.data]
+        if model in model_ids:
+            print(f"  -> Model '{model}' found in GET /models: YES")
+        else:
+            available_preview = ", ".join(model_ids[:5])
+            print(f"  -> Model '{model}' found in GET /models: NO (available: {available_preview}...)")
+    except AuthenticationError:
+        print("\nFAIL: Authentication failed (401 Unauthorized). Check your LLM_API_KEY in .env.")
+        return 1
+    except PermissionDeniedError:
+        print("\nFAIL: Access forbidden (403 Forbidden). API key lacks permission.")
+        return 1
+    except RateLimitError:
+        print("\nFAIL: Rate limit exceeded (429 Rate Limit).")
+        return 1
+    except APITimeoutError:
+        print(f"\nFAIL: Request timed out contacting {base_url}.")
+        return 1
+    except APIError as ae:
+        status_code = getattr(ae, "status_code", None)
+        if status_code == 404:
+            print("  -> Notice: GET /models returned 404 (endpoint may not support listing models). Continuing to test chat completion.")
+        else:
+            print(f"  -> Notice: GET /models returned error ({ae}). Continuing to test chat completion.")
+    except Exception as e:
+        print(f"  -> Notice: Could not list models ({e}). Continuing to test chat completion.")
+
+    # 2. Check chat completion
+    print(f"\n[Step 2/2] Testing tiny chat completion with '{model}'...")
+    try:
+        t0 = time.time()
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5,
+            timeout=15.0
+        )
+        latency_ms = round((time.time() - t0) * 1000, 2)
+        print(f"  -> Chat response received in {latency_ms} ms.")
+        print("\nRESULT: PASS (Endpoint and model are operational)")
+        return 0
+    except AuthenticationError:
+        print("\nRESULT: FAIL - Authentication failed (401 Unauthorized). Check your LLM_API_KEY in .env.")
+        return 1
+    except PermissionDeniedError:
+        print(f"\nRESULT: FAIL - Access forbidden (403 Forbidden). API key lacks permissions for model '{model}'.")
+        return 1
+    except NotFoundError:
+        print(f"\nRESULT: FAIL - Model not found (404 Not Found). Model '{model}' does not exist on {base_url}. Run 'python -m ai.list_models'.")
+        return 1
+    except RateLimitError:
+        print("\nRESULT: FAIL - Rate limit exceeded (429 Rate Limit). Quota exhausted or request rate too high.")
+        return 1
+    except APITimeoutError:
+        print(f"\nRESULT: FAIL - Request timed out. Server at {base_url} did not respond within 15 seconds.")
+        return 1
+    except APIConnectionError:
+        print(f"\nRESULT: FAIL - Connection failed. Could not reach server at {base_url}.")
+        return 1
+    except Exception as e:
+        sanitized = sanitize_secret_text(str(e), api_key)
+        print(f"\nRESULT: FAIL - {sanitized}")
+        return 1
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--check":
+        sys.exit(run_check())
+
     test_inst = sys.argv[1] if len(sys.argv) > 1 else "Delete old user records."
     print("=== Semantic Chaos Monkey (Hybrid Pipeline) ===")
     print(f"Instruction: {test_inst}")

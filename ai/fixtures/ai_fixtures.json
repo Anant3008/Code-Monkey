@@ -16,18 +16,18 @@
     },
     "world": {
       "entity": "user",
-      "today": "2026-10-13",
+      "today": "2026-01-01",
       "records": [
-        {"id": "U01", "email": "alice@corp.com", "created_at": "2025-01-10", "last_active_at": "2026-10-10", "status": "active"},
-        {"id": "U02", "email": "bob@dormant.com", "created_at": "2024-05-01", "last_active_at": "2026-05-01", "status": "dormant"},
-        {"id": "U03", "email": "carol@active.org", "created_at": "2026-01-15", "last_active_at": "2026-10-12", "status": "active"},
-        {"id": "U04", "email": "dave@old.io", "created_at": "2023-11-20", "last_active_at": "2026-01-10", "status": "dormant"},
-        {"id": "U05", "email": "eve@recent.com", "created_at": "2026-09-01", "last_active_at": "2026-09-20", "status": "active"},
-        {"id": "U06", "email": "frank@test.net", "created_at": "2025-08-14", "last_active_at": "2026-03-15", "status": "active"},
-        {"id": "U07", "email": "grace@loyal.com", "created_at": "2024-02-11", "last_active_at": "2026-10-11", "status": "active"},
-        {"id": "U08", "email": "heidi@edge.org", "created_at": "2026-07-15", "last_active_at": "2026-07-15", "status": "active", "_injected": true},
+        {"id": "U01", "email": "alice@corp.com", "created_at": "2025-01-10", "last_active_at": "2025-12-20", "status": "active"},
+        {"id": "U02", "email": "bob@dormant.com", "created_at": "2024-05-01", "last_active_at": "2025-05-01", "status": "dormant"},
+        {"id": "U03", "email": "carol@active.org", "created_at": "2025-01-15", "last_active_at": "2025-12-30", "status": "active"},
+        {"id": "U04", "email": "dave@old.io", "created_at": "2023-11-20", "last_active_at": "2025-01-10", "status": "dormant"},
+        {"id": "U05", "email": "eve@recent.com", "created_at": "2025-11-01", "last_active_at": "2025-12-15", "status": "active"},
+        {"id": "U06", "email": "frank@test.net", "created_at": "2025-08-14", "last_active_at": "2025-03-15", "status": "active"},
+        {"id": "U07", "email": "grace@loyal.com", "created_at": "2024-02-11", "last_active_at": "2025-12-28", "status": "active"},
+        {"id": "U08", "email": "heidi@edge.org", "created_at": "2025-10-03", "last_active_at": "2025-10-03", "status": "active", "_injected": true},
         {"id": "U09", "email": "ivan@null.com", "created_at": "2025-10-01", "last_active_at": null, "status": "pending", "_injected": true},
-        {"id": "U10", "email": "judy@boundary.com", "created_at": "2026-07-15", "last_active_at": "2026-07-15", "status": "active", "_injected": true}
+        {"id": "U10", "email": "judy@boundary.com", "created_at": "2025-10-03", "last_active_at": "2025-10-03", "status": "active", "_injected": true}
       ]
     },
     "branches": [
@@ -135,18 +135,18 @@
     },
     "world": {
       "entity": "log_file",
-      "today": "2026-10-13",
+      "today": "2026-01-01",
       "records": [
-        {"id": "LOG-01", "filename": "app_2026_01.log", "created_at": "2026-01-10", "size_mb": 150.0, "is_archived": false},
-        {"id": "LOG-02", "filename": "app_2026_09.log", "created_at": "2026-09-01", "size_mb": 12.5, "is_archived": false},
-        {"id": "LOG-03", "filename": "app_2026_10.log", "created_at": "2026-10-01", "size_mb": 4.0, "is_archived": false},
-        {"id": "LOG-04", "filename": "error_2025.log", "created_at": "2025-11-20", "size_mb": 500.0, "is_archived": false},
-        {"id": "LOG-05", "filename": "audit_2026_08.log", "created_at": "2026-08-15", "size_mb": 80.0, "is_archived": true},
-        {"id": "LOG-06", "filename": "sys_2026_07.log", "created_at": "2026-07-10", "size_mb": 45.0, "is_archived": false},
-        {"id": "LOG-07", "filename": "debug_2026_10.log", "created_at": "2026-10-12", "size_mb": 0.5, "is_archived": false},
-        {"id": "LOG-08", "filename": "auth_2026_07_15.log", "created_at": "2026-07-15", "size_mb": 35.0, "is_archived": false, "_injected": true},
+        {"id": "LOG-01", "filename": "app_2025_01.log", "created_at": "2025-01-10", "size_mb": 150.0, "is_archived": false},
+        {"id": "LOG-02", "filename": "app_2025_11.log", "created_at": "2025-11-01", "size_mb": 12.5, "is_archived": false},
+        {"id": "LOG-03", "filename": "app_2025_12.log", "created_at": "2025-12-25", "size_mb": 4.0, "is_archived": false},
+        {"id": "LOG-04", "filename": "error_2024.log", "created_at": "2024-11-20", "size_mb": 500.0, "is_archived": false},
+        {"id": "LOG-05", "filename": "audit_2025_10.log", "created_at": "2025-10-15", "size_mb": 80.0, "is_archived": true},
+        {"id": "LOG-06", "filename": "sys_2025_09.log", "created_at": "2025-09-10", "size_mb": 45.0, "is_archived": false},
+        {"id": "LOG-07", "filename": "debug_2025_12.log", "created_at": "2025-12-30", "size_mb": 0.5, "is_archived": false},
+        {"id": "LOG-08", "filename": "auth_2025_12_02.log", "created_at": "2025-12-02", "size_mb": 35.0, "is_archived": false, "_injected": true},
         {"id": "LOG-09", "filename": "corrupt.log", "created_at": null, "size_mb": 0.0, "is_archived": false, "_injected": true},
-        {"id": "LOG-10", "filename": "nomatch.log", "created_at": "2026-10-13", "size_mb": 0.1, "is_archived": true, "_injected": true}
+        {"id": "LOG-10", "filename": "nomatch.log", "created_at": "2026-01-01", "size_mb": 0.1, "is_archived": true, "_injected": true}
       ]
     },
     "branches": [
