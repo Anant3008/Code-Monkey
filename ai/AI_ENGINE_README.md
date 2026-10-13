@@ -1,74 +1,148 @@
 # Semantic Chaos Monkey — AI Engine (Person 4 Documentation)
 
-This module provides the open-weight AI interpretation and ambiguity analysis engine for Semantic Chaos Monkey.
+This module provides the hybrid open-weight AI interpretation and ambiguity analysis engine for Semantic Chaos Monkey.
 
-**Core Principle**: *The AI discovers alternative meanings; the simulator verifies their real-world consequences.*
-The model output is strictly data, never code or SQL.
+**Core Principle**: *The AI discovers alternative meanings and structures; the simulator verifies their real-world consequences.*  
+**Safety Principle**: The AI never produces code, regex, shell, or SQL. It produces strictly validated, declarative data models. A fixed Python engine interprets it.
 
 ---
 
-## 1. Output Contract for Person 3
+## 1. Hybrid Architecture & Routing Diagram
 
-Person 3's FastAPI orchestrator calls:
+The engine features a **hybrid pipeline** where a new generic pipeline handles arbitrary operational instructions, with the reliable hardcoded user-cleanup path preserved as an automatic fallback.
 
-```python
-from backend.ai_engine import generate_interpretations
-
-response = generate_interpretations(
-    instruction="Delete old user records.",
-    scenario="user_cleanup"
-)
+```
++-------------------------------------------------------------+
+|               User Instruction / API Request                |
++-------------------------------------------------------------+
+                              |
+       +----------------------+----------------------+
+       | Is CHAOS_FORCE_FALLBACK or no API key set?  |
+       +----------------------+----------------------+
+             YES /                      \ NO
+                 v                       v
+      +--------------------+   +------------------------------------+
+      |  fixture_fallback  |   | Step 1: Generic Pipeline (Live DO) |
+      |  (Zero Network)    |   | - LLM: Entity Schema + Meanings    |
+      +--------------------+   | - Code: Injects World Edge Cases   |
+                               | - Code: Combines & Dedupes Branches|
+                               +-----------------+------------------+
+                                                 |
+                                     Success? ---+--- Failure / Timeout
+                                        |                   |
+                                        v                   v
+                               +----------------+   +-------------------------------+
+                               |  live_generic  |   | Is instruction user cleanup?  |
+                               +----------------+   +---------------+---------------+
+                                                                    |
+                                                          YES /           \ NO
+                                                              v             v
+                                                    +----------------+  +--------------------+
+                                                    | live_hardcoded |  |  fixture_fallback  |
+                                                    | (Demo Fallback)|  |  or "unsupported"  |
+                                                    +----------------+  +--------------------+
 ```
 
-### A. Success Response (`status: "ok"`)
+---
+
+## 2. Source Labeling Contract
+
+Every response from `analyze_and_branch()` or `generate_interpretations()` carries explicit provenance:
+
+| Source Value | Meaning | UI Badge |
+| :--- | :--- | :--- |
+| `"live_generic"` | Generic pipeline succeeded with live open-weight model | `Live (Generic)` |
+| `"live_hardcoded"` | Live model ran through the reliable hardcoded demo fallback | `Live (Hardcoded)` |
+| `"fixture_fallback"` | Served deterministically from verified local fixtures (no network call) | `Fixture (Fallback)` |
+
+In addition, each response includes:
+- `"model_info"`: `{"model": str, "mode": "live" | "fixture"}`
+- `"fallback_reason"`: `str | null` (e.g., `"Generic pipeline failed (timeout)"` or `null` when live generic succeeds)
+
+---
+
+## 3. Public API Contract for Person 3
+
+### Primary Entry Point: `analyze_and_branch`
+```python
+from ai.ai_engine import analyze_and_branch
+
+result = analyze_and_branch("Delete old user records.", scenario="auto")
+```
+
+### Full JSON Output Structure (`live_generic` / Universal Plan):
 ```json
 {
   "status": "ok",
-  "interpretations": [
+  "source": "live_generic",
+  "fallback_reason": null,
+  "domain": "user_management",
+  "entity_schema": {
+    "name": "user",
+    "fields": [
+      {"name": "id", "type": "string", "description": "Unique user ID"},
+      {"name": "email", "type": "string", "description": "Email address"},
+      {"name": "created_at", "type": "date", "description": "Creation timestamp"},
+      {"name": "last_active_at", "type": "date", "description": "Last active timestamp"},
+      {"name": "status", "type": "string", "description": "Account status"}
+    ]
+  },
+  "world": {
+    "entity": "user",
+    "today": "2026-10-13",
+    "records": [
+      {"id": "U01", "email": "alice@corp.com", "created_at": "2025-01-10", "last_active_at": "2026-10-10", "status": "active"},
+      {"id": "U02", "email": "bob@dormant.com", "created_at": "2024-05-01", "last_active_at": "2026-05-01", "status": "dormant"},
+      {"id": "INJ-NULL-01", "email": "null@edge.com", "created_at": "2026-06-15", "last_active_at": null, "status": "pending", "_injected": true},
+      {"id": "INJ-BOUND-90", "email": "bound@edge.com", "created_at": "2026-07-15", "last_active_at": "2026-07-15", "status": "active", "_injected": true},
+      {"id": "INJ-NOMATCH-01", "email": "fresh@active.com", "created_at": "2026-10-13", "last_active_at": "2026-10-13", "status": "active", "_injected": true}
+    ]
+  },
+  "branches": [
     {
       "id": "A",
-      "title": "Inactive for 90 days",
-      "assumption": "'Old' means inactive for at least 90 days based on last activity.",
-      "action": {
-        "type": "delete_users",
-        "condition": "inactive_90_days"
-      },
-      "explanation": "Interprets 'old' as dormant accounts based on last recorded activity timestamp."
+      "title": "old: Inactive for 90+ days",
+      "assumption": "'Old' means no activity recorded in the last 90 days.",
+      "operation": "delete",
+      "update_set": null,
+      "where": {"op": "older_than_days", "field": "last_active_at", "days": 90},
+      "chosen_meanings": {"old": "inactive_90"},
+      "explanation": "Branch A tests the assumption that old refers to inactivity."
     },
     {
       "id": "B",
-      "title": "Account created 90+ days ago",
-      "assumption": "'Old' means created more than 90 days ago, regardless of recent activity.",
-      "action": {
-        "type": "delete_users",
-        "condition": "created_90_days"
-      },
-      "explanation": "Interprets 'old' strictly by account creation date, which endangers active long-term customers."
+      "title": "old: Account created 90+ days ago",
+      "assumption": "'Old' means account created more than 90 days ago.",
+      "operation": "delete",
+      "update_set": null,
+      "where": {"op": "older_than_days", "field": "created_at", "days": 90},
+      "chosen_meanings": {"old": "created_90"},
+      "explanation": "Branch B tests the assumption that old refers to creation date."
     },
     {
       "id": "C",
-      "title": "Inactive or missing activity dates",
-      "assumption": "Accounts lacking an activity timestamp are assumed to be old and dormant.",
-      "action": {
-        "type": "delete_users",
-        "condition": "inactive_or_unknown"
+      "title": "old: Inactive or missing activity date",
+      "assumption": "Accounts lacking activity dates are assumed to be inactive.",
+      "operation": "delete",
+      "update_set": null,
+      "where": {
+        "op": "or",
+        "args": [
+          {"op": "older_than_days", "field": "last_active_at", "days": 90},
+          {"op": "is_null", "field": "last_active_at"}
+        ]
       },
-      "explanation": "Treats missing telemetry as inactivity without verifying account state."
+      "chosen_meanings": {"old": "inactive_or_unknown"},
+      "explanation": "Branch C tests treating missing telemetry as inactive."
     }
   ],
-  "candidate_ambiguities": [
+  "ambiguous_terms": [
     {
       "term": "old",
-      "description": "Could refer to duration since account creation or duration since last user activity.",
-      "interpretation_ids": ["A", "B"]
-    },
-    {
-      "term": "missing activity dates",
-      "description": "Does not specify whether accounts with null activity dates are preserved or purged.",
-      "interpretation_ids": ["A", "C"]
+      "description": "Unspecified age basis: inactivity vs creation date and null handling."
     }
   ],
-  "suggested_rewrite": "Delete user accounts inactive for at least 90 days based on last recorded activity. Preserve accounts with missing activity dates and flag them for audit.",
+  "suggested_rewrite": "Delete user accounts whose last activity was more than 90 days ago. Flag accounts with null activity dates for audit.",
   "model_info": {
     "model": "qwen2.5:7b",
     "mode": "live"
@@ -77,137 +151,92 @@ response = generate_interpretations(
 }
 ```
 
-*Note: Per the architecture, `affected_ids`, `affected_count`, and `risk_level` are computed by the deterministic simulator, NOT the AI.*
+### Legacy Backward-Compatible Entry Point: `generate_interpretations`
+Preserved for zero-breakage backward compatibility:
+```python
+from ai.ai_engine import generate_interpretations
 
-### B. Out-of-Scope Response (`status: "unsupported"`)
-For instructions outside the user-cleanup domain (e.g., `"Restore the latest backup if necessary."`) or unsupported scenarios:
-```json
-{
-  "status": "unsupported",
-  "reason": "Backup and restore operations are outside the MVP simulator's supported action scope. Only user-cleanup actions ('delete_users') are supported.",
-  "interpretations": [],
-  "candidate_ambiguities": [],
-  "suggested_rewrite": "",
-  "model_info": {
-    "model": "qwen2.5:7b",
-    "mode": "fixture"
-  }
-}
+res = generate_interpretations("Delete old user records.", scenario="user_cleanup")
 ```
 
-### C. Failure Contract (`status: "error"`)
-If model communication fails after bounded retries and no fixture is available, the engine returns a clean JSON error response (so FastAPI never crashes):
-```json
-{
-  "status": "error",
-  "reason": "AI Engine failed after 3 attempts. Last error: ...",
-  "interpretations": [],
-  "candidate_ambiguities": [],
-  "suggested_rewrite": "",
-  "model_info": {
-    "model": "qwen2.5:7b",
-    "mode": "live"
-  }
-}
+### Disambiguated Rewrite Generator: `generate_rewrite`
+Call after simulation to produce an unambiguous rewrite with evidence:
+```python
+from ai.ai_engine import generate_rewrite
+
+rewrite_res = generate_rewrite(
+    instruction="Delete old user records.",
+    ambiguous_terms=[{"term": "old"}],
+    outcomes={"divergence": "Branch A deleted 2 records; Branch B deleted 5 records"}
+)
 ```
-*(An `AIEngineError` exception is also defined for internal catch-and-raise semantics).*
 
 ---
 
-## 2. Hard Action Allowlist
+## 4. WHAT PERSON 3 MUST IMPLEMENT (Simulator Semantics)
 
-The model output is strictly validated against this allowlist:
-- `type`: `"delete_users"` (only allowed type)
-- `condition`:
-  - `"inactive_90_days"`: last activity at least 90 days ago
-  - `"created_90_days"`: account created at least 90 days ago
-  - `"inactive_or_unknown"`: inactive 90+ days OR last activity date is missing
+Person 3's simulator takes `world` and iterates over each `BranchPlan` in `branches`. To ensure deterministic verification, follow these rules:
 
-Any other action or condition (e.g. `drop_table`, `rm -rf`) is rejected by the Pydantic validation gate.
+1. **Deep Copy per Branch**:  
+   Always clone `world.records` before executing each branch so execution branches remain strictly isolated.
+2. **Date Math against `world.today`**:  
+   Do not use system `datetime.now()`. Use `world.today` (e.g., `"2026-10-13"`).
+3. **`older_than_days N` Semantics**:  
+   A record matches if `(world.today - record[field]).days >= N`.
+4. **`newer_than_days N` Semantics**:  
+   A record matches if `(world.today - record[field]).days < N`.
+5. **Null Handling**:  
+   If `record[field] is None`:
+   - `is_null` evaluates to `True`.
+   - `not_null` evaluates to `False`.
+   - `older_than_days`, `newer_than_days`, and numeric comparisons evaluate to `False` (never match nulls).
+6. **Per-Operation Behavior**:
+   - `"delete"`: Remove matching records from the active record set.
+   - `"archive"`: Apply `update_set` (e.g. `{"is_archived": True}`).
+   - `"update"`: Update fields specified in `update_set`.
+   - `"flag"`: Mark flagged records.
+   - `"restore"`: Mark restored records.
+
+*Note: You do not need two separate simulator engines! Our AI engine automatically converts hardcoded fallback results into the universal `world` + `branches` format so you only need ONE simulator interpreter.*
 
 ---
 
-## 3. Configuration & DigitalOcean / Ollama Setup
+## 5. Configuration & Demo Switches
 
-Copy `.env.example` to `.env`:
+### `.env` Setup
 ```bash
-cp .env.example .env
-```
-
-### Configuration Variables
-```env
-# DigitalOcean Serverless Inference (Default)
+# DigitalOcean Inference Endpoint
 LLM_BASE_URL=https://inference.do-ai.run/v1
 LLM_MODEL=qwen2.5:7b
 LLM_API_KEY=your_digitalocean_model_access_key
 LLM_TIMEOUT_SECONDS=60
-LLM_MAX_RETRIES=2
-LLM_MAX_TOKENS=2000
-LLM_TEMPERATURE=0.4
+LLM_TOTAL_BUDGET_SECONDS=45
+
+# Demo Switch: Force Fixture Fallback (Demonstrates offline resiliency)
+CHAOS_FORCE_FALLBACK=false
+
+# Offline Fixture Mode (No network calls)
 CHAOS_FIXTURE_MODE=false
 ```
 
-### How to get a DigitalOcean Model Access Key:
-1. Log into your DigitalOcean Control Panel.
-2. Navigate to **GenAI / Serverless Inference** -> **Model Access Keys**.
-3. Generate a new Model Access Key and set `LLM_API_KEY=<your_key>`.
-
-### Discover Available Models
-Run the helper script to query model IDs:
-```bash
-python backend/list_models.py
-```
-
-### Running with Local Ollama
-1. Start Ollama with an open-weight model: `ollama run qwen2.5:7b`
-2. Update `.env`:
-   ```env
-   LLM_BASE_URL=http://localhost:11434/v1
-   LLM_MODEL=qwen2.5:7b
-   LLM_API_KEY=ollama
-   ```
-
 ---
 
-## 4. Fixture Mode (Offline / Hackathon Demo)
+## 6. Run & Test Commands
 
-When `CHAOS_FIXTURE_MODE=true` (or when no API key is set), the engine skips the network and serves deterministic verified fixtures from `backend/fixtures/ai_fixtures.json`.
-
-Supported benchmark fixtures:
-- `"Delete old user records."`
-- `"Remove inactive users."`
-- `"Restore the latest backup if necessary."` (returns `status: "unsupported"`)
-
----
-
-## 5. Quick Manual Check (CLI)
-
-You can run the engine directly from the command line:
-
+### 1. Manual CLI Test:
 ```bash
-# Test primary benchmark instruction
-python -m backend.ai_engine "Delete old user records."
-
-# Test secondary benchmark instruction
-python -m backend.ai_engine "Remove inactive users."
-
-# Test out-of-scope instruction
-python -m backend.ai_engine "Restore the latest backup if necessary."
+python -m ai.ai_engine "Delete old user records."
+python -m ai.ai_engine "Archive old log files."
 ```
 
----
-
-## 6. Running Tests
-
-Run the full pytest suite (14 unit tests, all offline with mocked clients and fixtures):
-
+### 2. Run Test Suite:
 ```bash
-python -m pytest backend/tests/test_ai_engine.py -v
+python -m pytest ai/tests/test_ai_engine.py -v
 ```
 
-### To run the optional live test against the real model:
+### 3. Run Optional Live Test:
 ```bash
 $env:RUN_LIVE_TESTS="1"
-$env:LLM_API_KEY="<your-access-key>"
-python -m pytest backend/tests/test_ai_engine.py -k test_live_open_weight_model -v
+$env:LLM_API_KEY="<your-key>"
+python -m pytest ai/tests/test_ai_engine.py -k test_live_generic_instructions -v
 ```
