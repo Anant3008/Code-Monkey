@@ -4,6 +4,8 @@ Semantic Chaos Monkey (SCM) is a proposed semantic adversarial testing platform 
 Project status: Product definition / MVP proposal. The initial release is planned as a local-first web application using simulated operations only. This README describes the intended MVP from the product requirements document; it does not claim that the product or its proposed performance targets are already implemented or achieved.
 
 Table of Contents
+- Repository Layout
+- Local Frontend Development
 - The Problem
 - The Solution
 - Core Workflow
@@ -17,6 +19,24 @@ Table of Contents
 - Differentiation
 - Glossary
 - References
+
+Repository Layout
+- `client/` — React and TypeScript frontend, Vite/Tailwind configuration, static assets, and package-manager lockfiles.
+- `ai/` — Python AI engine, schemas, fixtures, documentation, and tests.
+- `.figma/make/` — Figma Make scripts and project configuration; frontend commands are routed to `client/`.
+
+Local Frontend Development
+Install the frontend dependencies and start the Vite development server from the repository root:
+```sh
+pnpm --dir client install
+pnpm --dir client dev
+```
+Build or format the frontend with:
+```sh
+pnpm --dir client build
+pnpm --dir client format
+```
+
 The Problem
 Operational instructions can be grammatically correct and still omit crucial details, including:
 - Target or environment: Which database, service, tenant, or region is affected?
