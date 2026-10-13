@@ -182,5 +182,6 @@ Preserved for 100% backward compatibility with the initial contract.
 - **Testing**:
   - Expanded test suite from 37 to 47 tests (45 passed, 2 skipped in 1.00s).
 
-
-
+### Entry 8: Model Configuration Update
+- Updated `ai/.env` to configure `LLM_MODEL=gpt-oss:20b` with the local Ollama endpoint (`http://localhost:11434/v1`).
+- Verified test suite passes cleanly: 45 passed, 2 skipped in ~1.05s.
