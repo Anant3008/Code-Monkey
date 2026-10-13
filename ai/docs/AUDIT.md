@@ -11,47 +11,65 @@
 
 ---
 
-## 1. Is `world.today` a fixed constant or does it come from the system clock?
+## 1. Is `world.today` a fixed constant or does it come from the system clock (`datetime.now`/`today`)?
 
-**Answer:** `world.today` is a **fixed constant** (`"2026-10-13"`). It never comes from the system clock (`datetime.now()` or `date.today()`).
+**Answer:** `world.today` is a **fixed constant** defaulting to `"2026-01-01"`, overridable via the environment variable `CHAOS_WORLD_TODAY`. It does **not** come from the system clock (`datetime.now()` or `date.today()`).
 
 **File & Line References:**
-- [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L210): `World.today` field definition sets a fixed default: `today: str = Field(default="2026-10-13", description="Fixed reference date for reproducibility (YYYY-MM-DD)")`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L64): Module constant defined as `FIXED_TODAY = "2026-10-13"`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L250): `inject_world_edge_cases()` initializes reference date from the constant: `today = date.fromisoformat(FIXED_TODAY)`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L480): `_execute_generic_pipeline()` creates `World(entity=..., today=FIXED_TODAY, records=injected_records)`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L529): `convert_hardcoded_to_plan()` sets `"today": FIXED_TODAY`.
-- [ai/prompts.py](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L258): `WORLD_GEN_PROMPT` instructs LLM: `Reference date today is fixed at: 2026-10-13.`
-- [ai/prompts.py](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L270): `build_world_gen_messages()` passes `"today": "2026-10-13"`.
-- [ai/fixtures/ai_fixtures.json](file:///e:/Monkey/Code-Monkey/ai/fixtures/ai_fixtures.json#L19): Static fixtures use `"today": "2026-10-13"`.
+- [ai/plan_schema.py:L18](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L18): Constant defined as `WORLD_TODAY = os.getenv("CHAOS_WORLD_TODAY", "2026-01-01")`.
+- [ai/plan_schema.py:L315](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L315): `World.today` field default factory: `Field(default_factory=lambda: os.getenv("CHAOS_WORLD_TODAY", "2026-01-01"))`.
+- [ai/ai_engine.py:L64-L66](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L64-L66): `def get_world_today() -> str: return os.getenv("CHAOS_WORLD_TODAY", "2026-01-01")`.
+- [ai/ai_engine.py:L263](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L263): In `inject_world_edge_cases()`, initializes reference date from `ref_today = get_world_today()`.
+- [ai/ai_engine.py:L495](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L495): In `_execute_generic_pipeline()`, creates `World(entity=..., today=get_world_today(), records=injected_records)`.
+- [ai/ai_engine.py:L524](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L524): In `convert_hardcoded_to_plan()`, sets `ref_today = get_world_today()`.
+- [ai/prompts.py:L262-L264](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L262-L264): `get_world_today()` uses `CHAOS_WORLD_TODAY` (defaulting to `"2026-01-01"`).
+- [ai/fixtures/ai_fixtures.json:L19, L138](file:///e:/Monkey/Code-Monkey/ai/fixtures/ai_fixtures.json#L19-L138): Static fixtures use `"today": "2026-01-01"`.
+- Tested in [ai/tests/test_ai_engine.py:L539-L569](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L539-L569) (`test_different_mocked_system_dates_produce_identical_worlds`).
 
 ---
 
 ## 2. Is each LLM call's timeout capped by the REMAINING total budget, or only by `LLM_TIMEOUT_SECONDS`? Can retries push total time past `LLM_TOTAL_BUDGET_SECONDS`?
 
 **Answer:** 
-- Each LLM call's timeout is **only capped by `LLM_TIMEOUT_SECONDS`** (configured on the OpenAI client), **not** by the remaining total budget.
-- **Yes, retries and multi-step calls can push the total elapsed time past `LLM_TOTAL_BUDGET_SECONDS`.**
+- Each LLM call's timeout is capped by **`min(LLM_TIMEOUT_SECONDS, remaining)`**, where `remaining = deadline - now`.
+- Before every LLM call, `remaining = deadline - time.time()` is evaluated. If `remaining <= 0`, the live path is immediately aborted and routed to fallback with `fallback_reason = "time budget exceeded"`.
+- Retries inside `_call_hardcoded_model` recompute `remaining` and abort if `remaining <= 0`.
+- Therefore, retries **cannot** push total time past `LLM_TOTAL_BUDGET_SECONDS`.
 
 **File & Line References:**
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L165-L169): Default per-call timeout is `60.0s` (`LLM_TIMEOUT_SECONDS`), whereas `self.total_budget` is `45.0s` (`LLM_TOTAL_BUDGET_SECONDS`). Note that individual timeout actually exceeds the total budget default!
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L188-L192): `_get_client()` sets `timeout=self.timeout` statically on the OpenAI client instance.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L435-L441): Generic analyze call executes `client.chat.completions.create(...)` without passing a per-call timeout derived from `remaining = total_budget - elapsed`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L463-L469): Second step (world generation) also executes without a remaining-budget timeout override.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L585-L631): In `_call_hardcoded_model()`, the retry loop runs up to `self.max_retries + 1` times. It never checks `total_budget` inside the loop. If each attempt takes up to 60s, three attempts can block for 180 seconds.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L693-L694) & [Line 707-708](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L707-L708): In `analyze_and_branch()`, `time.time() - start_time > self.total_budget` is only checked *prior* to starting a phase, not within active calls or loops.
+- [ai/ai_engine.py:L177-L181](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L177-L181): `self.timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "30.0"))`, `self.total_budget = float(os.getenv("LLM_TOTAL_BUDGET_SECONDS", "60.0"))`.
+- [ai/ai_engine.py:L446-L457](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L446-L457): In `_execute_generic_pipeline()` before Step 1 analyze call:
+  `remaining = (deadline - time.time()) if deadline else self.total_budget`
+  `if remaining <= 0: raise AIEngineError("time budget exceeded")`
+  `call_timeout = min(self.timeout, remaining)`
+- [ai/ai_engine.py:L473-L484](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L473-L484): Before Step 2 world generation call:
+  `remaining = (deadline - time.time()) if deadline else self.total_budget`
+  `if remaining <= 0: raise AIEngineError("time budget exceeded")`
+  `call_timeout = min(self.timeout, remaining)`
+- [ai/ai_engine.py:L608-L612](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L608-L612): In `_call_hardcoded_model()`, rechecks remaining on every retry attempt:
+  `remaining = (deadline - time.time()) if deadline else self.total_budget`
+  `if remaining <= 0: raise AIEngineError("time budget exceeded")`
+  `call_timeout = min(self.timeout, remaining)`
+- [ai/ai_engine.py:L806-L832](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L806-L832): In `analyze_and_branch()`, `deadline = start_time + self.total_budget`. Checked before live pipeline, and if `get_remaining() <= 0`, routes to `fixture_fallback` with `fallback_reason = "time budget exceeded"`.
+- Tested in [ai/tests/test_ai_engine.py:L571-L600](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L571-L600) (`test_slow_client_never_exceeds_budget`).
 
 ---
 
 ## 3. Does the validator reject `update_set` keys that are not in the entity schema? Does it check value types?
 
-**Answer:** **No.** The validator does **not** check `update_set` keys against the entity schema, and does **not** check value types for `update_set`.
+**Answer:** **YES.** `validate_operation_and_update_set` verifies that:
+1. `update_set` is required for `archive` and `update`, and forbidden (must be null) for `delete` and `flag`.
+2. Keys cannot be `'id'` and cannot start with `'_'`.
+3. Every key must exist in the entity schema's declared fields.
+4. Each value must match the declared schema type (`string`, `int`, `float`, `bool`, `date`).
 
 **File & Line References:**
-- [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L240): `OperationTemplate` defines `update_set: Optional[Dict[str, Any]] = None` without field key or value validation.
-- [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L249): `BranchPlan` defines `update_set: Optional[Dict[str, Any]] = None` without validators.
-- [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L157-L182): `validate_predicate_schema(p: Predicate, field_types: Dict[str, str], allow_term_ref: bool = False)` only inspects predicate AST nodes (`ComparePredicate`, `OlderThanDaysPredicate`, etc.). It does not accept or inspect `update_set`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L400-L417): In `build_branches()`, `operation_template.update_set` is passed straight into `BranchPlan` at line 413 without comparing keys against `field_types` or verifying that assigned values match the declared schema types.
+- [ai/plan_schema.py:L250-L280](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L250-L280): `validate_operation_and_update_set(operation, update_set, field_types)` checks:
+  `if k not in field_types: raise ValueError(...)`
+  `check_value_matches_type(v, field_types[k], field_name=k)`
+- [ai/plan_schema.py:L31-L54](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L31-L54): `check_value_matches_type()` enforces exact primitive types.
+- [ai/ai_engine.py:L373](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L373): Called in `build_branches()` before branch plan generation.
+- Tested in [ai/tests/test_ai_engine.py:L742-L762](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L742-L762) (`test_update_set_schema_key_and_type_validation`).
 
 ---
 
@@ -61,44 +79,42 @@
 
 | Item | Status | Mechanism & File / Line References |
 | :--- | :---: | :--- |
-| **Unknown operation** | **REJECTED** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L17): `AllowedOperation = Literal["delete", "archive", "update", "flag", "restore"]` used in `OperationTemplate` (line 238) and `BranchPlan` (line 248). Non-matching operations fail Pydantic validation. Tested in [test_ai_engine.py:L407-L419](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L407-L419). |
-| **Unknown predicate op** | **REJECTED** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L101-L128): `parse_predicate()` explicitly raises `ValueError(f"Unknown or forbidden predicate operator: '{op}'")` at line 128. Tested in [test_ai_engine.py:L421-L426](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L421-L426). |
-| **Unknown field** | **REJECTED** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L165-L167): `validate_predicate_schema()` checks `if p.field not in field_types: raise ValueError(...)`. Tested in [test_ai_engine.py:L428-L435](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L428-L435). |
-| **Operator/type mismatch** | **REJECTED** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L169-L176): Checks that `older_than_days`/`newer_than_days` are strictly on `"date"` fields, and relational comparisons (`lt`, `lte`, `gt`, `gte`) are on `"int"`, `"float"`, or `"date"`. Tested in [test_ai_engine.py:L437-L444](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L437-L444). |
-| **Depth > 4** | **REJECTED** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L148-L152): `validate_predicate_limits()` checks `if depth > max_depth: raise ValueError(...)` with `max_depth=4`. Tested in [test_ai_engine.py:L446-L453](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L446-L453). |
-| **Nodes > 12** | **REJECTED** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L153-L155): `validate_predicate_limits()` checks `if nodes > max_nodes: raise ValueError(...)` with `max_nodes=12`. Tested in [test_ai_engine.py:L446-L453](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L446-L453). |
-| **Leftover `term_ref` in final branches** | **REJECTED** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L159-L162): `validate_predicate_schema()` raises `ValueError(f"Unresolved term_ref('{p.term}') found in executable branch plan")` when `allow_term_ref=False`. Called at [ai_engine.py:L402](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L402). Tested in [test_ai_engine.py:L455-L462](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L455-L462). |
-| **Duplicate branch IDs** | **NOT REJECTED BY VALIDATOR** | [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L244-L253): `BranchPlan` validates only individual branch instances (`id: str = Field(..., min_length=1, max_length=4)`). There is no list-level Pydantic schema or validator function asserting unique branch IDs across a collection. Note that `ai_engine.py` generates unique IDs procedurally using index lookups into `["A", "B", ...]` ([Line 404](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L404)), but the validation layer itself does not enforce or reject duplicates if provided externally. |
+| **Unknown operation** | **REJECTED** | [ai/plan_schema.py:L23](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L23): `AllowedOperation = Literal["delete", "archive", "update", "flag"]` used in `OperationTemplate` (line 343) and `BranchPlan` (line 358). Tested in [test_ai_engine.py:L409-L421](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L409-L421) and [L688-L700](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L688-L700). |
+| **Unknown predicate op** | **REJECTED** | [ai/plan_schema.py:L146](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L146): `parse_predicate()` raises `ValueError(f"Unknown or forbidden predicate operator: '{op}'")`. Tested in [test_ai_engine.py:L423-L428](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L423-L428). |
+| **Unknown field** | **REJECTED** | [ai/plan_schema.py:L210-L212](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L210-L212): `validate_predicate_schema()` raises `ValueError` if `p.field not in field_types`. Tested in [test_ai_engine.py:L430-L437](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L430-L437). |
+| **Operator/type mismatch** | **REJECTED** | [ai/plan_schema.py:L215-L225](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L215-L225): Relational operators (`lt`, `lte`, `gt`, `gte`) are forbidden on `string` and `bool` fields; `older_than_days`/`newer_than_days` are forbidden on non-date fields. Tested in [test_ai_engine.py:L439-L446](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L439-L446) and [L779-L808](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L779-L808). |
+| **Depth > 4** | **REJECTED** | [ai/plan_schema.py:L186-L187](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L186-L187): `validate_predicate_limits()` checks `depth > max_depth` (default 4). Tested in [test_ai_engine.py:L448-L455](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L448-L455). |
+| **Nodes > 12** | **REJECTED** | [ai/plan_schema.py:L188-L189](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L188-L189): `validate_predicate_limits()` checks `nodes > max_nodes` (default 12). Tested in [test_ai_engine.py:L448-L455](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L448-L455). |
+| **Leftover `term_ref` in final branches** | **REJECTED** | [ai/plan_schema.py:L204-L206](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L204-L206): `validate_predicate_schema(..., allow_term_ref=False)` raises `ValueError` on `TermRefPredicate`. Tested in [test_ai_engine.py:L457-L464](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L457-L464). |
+| **Duplicate branch IDs** | **NOT REJECTED BY Pydantic validator model directly** | [ai/plan_schema.py:L355](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L355): `BranchPlan` validates single instances. `build_branches()` in `ai_engine.py` assigns unique sequential IDs `["A", "B", ...]` by index ([ai_engine.py:L442](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L442)). No root collection validator asserts uniqueness if branches are constructed outside `build_branches`. |
 
 ---
 
 ## 5. How is the model ID configured? Is `"qwen2.5:7b"` hardcoded anywhere as a default?
 
 **Answer:**
-- The model ID is configured via the `model` constructor parameter of `AIEngine` or the `LLM_MODEL` environment variable.
-- **Yes, `"qwen2.5:7b"` is hardcoded as a fallback default string** on line 163 of `ai/ai_engine.py`.
+- Configured strictly via `AIEngine(model=...)` constructor parameter or the `LLM_MODEL` environment variable.
+- **NO.** `"qwen2.5:7b"` is **no longer hardcoded anywhere as a default**.
+- If `LLM_MODEL` is unset in live mode, `AIEngine` raises `AIEngineError: LLM_MODEL is unset in live mode. Run 'python -m ai.list_models' to discover available models and set LLM_MODEL in .env`.
+- Fixture mode continues to function with no model configured.
 
 **File & Line References:**
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L152): `__init__(..., model: Optional[str] = None, ...)`
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L163): `self.model = model or os.getenv("LLM_MODEL", "qwen2.5:7b")` (hardcoded fallback default).
-- [ai/.env.example](file:///e:/Monkey/Code-Monkey/ai/.env.example#L7) & [Line 17](file:///e:/Monkey/Code-Monkey/ai/.env.example#L17): Declares `LLM_MODEL=qwen2.5:7b`.
+- [ai/ai_engine.py:L175](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L175): `self.model = model or os.getenv("LLM_MODEL", "")` (empty string fallback, not hardcoded model).
+- [ai/ai_engine.py:L196-L198](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L196-L198): In `__init__`, raises `AIEngineError` if `not self.fixture_mode and not self.force_fallback and not self.model`.
+- [ai/.env.example:L7](file:///e:/Monkey/Code-Monkey/ai/.env.example#L7): Uses placeholder `LLM_MODEL=REPLACE_WITH_ID_FROM_list_models`.
+- Tested in [ai/tests/test_ai_engine.py:L602-L612](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L602-L612) (`test_missing_model_raises_config_error_in_live_mode`).
 
 ---
 
 ## 6. What does `"restore"` do in `plan_schema`, `prompts` and `fixtures`?
 
 **Answer:**
-There is a **design mismatch** regarding `"restore"` across the codebase:
-1. In `plan_schema.py`, `"restore"` is recognized as an allowed operation literal in AST models, but has no parameters or semantics specified.
-2. In `prompts.py`, `"restore"` is listed in the allowlist for generic instructions, but backup/restore operations are declared out-of-scope in legacy system instructions.
-3. In `fixtures/ai_fixtures.json`, restore instructions are explicitly marked as unsupported.
-
-**File & Line References:**
-- [ai/plan_schema.py](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L17): Included in `AllowedOperation = Literal["delete", "archive", "update", "flag", "restore"]`. Accepts `"restore"` without error in `BranchPlan.operation`.
-- [ai/prompts.py](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L111): `GENERIC_ANALYZE_PROMPT` Rule 2 allows `"restore"`: `ALLOWED OPERATIONS: "delete", "archive", "update", "flag", "restore"`. However, no few-shot prompt demonstrates a restore operation or what parameters it should accept.
-- [ai/prompts.py](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L31-L32): Legacy `SYSTEM_PROMPT` Rule 8 states: `OUT-OF-SCOPE INSTRUCTIONS: If the instruction is outside user-record cleanup (e.g., database backups, server restarts, file deletion), return status "unsupported"`.
-- [ai/fixtures/ai_fixtures.json](file:///e:/Monkey/Code-Monkey/ai/fixtures/ai_fixtures.json#L253-L265): Under `"restore the latest backup if necessary."`, returns `"status": "unsupported"`, stating: `"Backup and restore operations are outside the MVP simulator's supported action scope. Only user-cleanup actions ('delete_users') are supported."`
-- [ai/tests/test_ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L230-L239): `test_fixture_restore_latest_backup_unsupported` asserts that `"restore the latest backup if necessary."` returns `"unsupported"`.
+`"restore"` has been **completely removed from the allowed operations** and is treated as **unsupported**:
+1. In `plan_schema.py`: `"restore"` is removed from `AllowedOperation` ([plan_schema.py:L23](file:///e:/Monkey/Code-Monkey/ai/plan_schema.py#L23)). Any attempt to construct a plan with `operation="restore"` fails validation.
+2. In `prompts.py`: `GENERIC_ANALYZE_PROMPT` explicitly specifies: `ALLOWED OPERATIONS: "delete", "archive", "update", "flag". (Reject anything else; "restore" is strictly unsupported)` ([prompts.py:L111](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L111)).
+3. In `fixtures/ai_fixtures.json`: `"restore the latest backup if necessary."` returns `"status": "unsupported"` with `fallback_reason: "Restore operations are unsupported as there is no defined source data to restore from."` ([ai_fixtures.json:L253-L265](file:///e:/Monkey/Code-Monkey/ai/fixtures/ai_fixtures.json#L253-L265)).
+4. In `ai_engine.py`: Router catches instructions containing "restore" and returns status `"unsupported"` ([ai_engine.py:L794-L808](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L794-L808)).
+5. Tested in [ai/tests/test_ai_engine.py:L688-L700](file:///e:/Monkey/Code-Monkey/ai/tests/test_ai_engine.py#L688-L700) (`test_plan_validation_rejects_restore_operation`).
 
 ---
 
@@ -108,9 +124,8 @@ There is a **design mismatch** regarding `"restore"` across the codebase:
 `generate_rewrite` accepts an **unvalidated, arbitrary object** (`Optional[Dict[str, Any]] = None` or `Any`). There is no required structure or Pydantic validation schema enforced on `outcomes`.
 
 **File & Line References:**
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L743): Function signature specifies `outcomes: Optional[Dict[str, Any]] = None`.
-- [ai/prompts.py](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L289): `build_rewrite_messages(instruction: str, ambiguous_terms: List[Dict[str, Any]], outcomes: Any = None)`.
-- [ai/prompts.py](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L294): Directly embeds `outcomes` into the prompt payload: `"simulation_outcomes": outcomes or "Different branches resulted in conflicting sets of affected records."`. If `outcomes` is None or empty/falsy, it falls back to the static string. If present, whatever JSON-serializable dictionary or list is passed gets serialized directly into the LLM prompt.
+- [ai/ai_engine.py:L903](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L903): `def generate_rewrite(instruction: str, ambiguous_terms: List[Dict[str, Any]], outcomes: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:`.
+- [ai/prompts.py:L295-L300](file:///e:/Monkey/Code-Monkey/ai/prompts.py#L295-L300): Directly embeds `outcomes` into prompt payload: `"simulation_outcomes": outcomes or "Different branches resulted in conflicting sets of affected records."`. If `None` or falsy, it falls back to the static string.
 
 ---
 
@@ -119,52 +134,30 @@ There is a **design mismatch** regarding `"restore"` across the codebase:
 **Answer:** **NO.** Model output never reaches `eval`, `exec`, `subprocess`, `os.system`, SQL query strings, or dynamically generated code.
 
 **File & Line References:**
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L210-L228): Model raw output is parsed strictly via `_clean_and_parse_json()` using standard `json.loads()`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L455): Parsed output is validated strictly using Pydantic `GenericAnalysisOutput.model_validate(parsed)`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L400-L402): Predicates are parsed and validated via `parse_predicate()`, `validate_predicate_limits()`, and `validate_predicate_schema()`.
+- [ai/ai_engine.py:L221-L238](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L221-L238): Model raw output is parsed strictly via `_clean_and_parse_json()` using standard `json.loads()`.
+- [ai/ai_engine.py:L468](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L468): Parsed output is validated strictly using Pydantic `GenericAnalysisOutput.model_validate(parsed)`.
+- [ai/ai_engine.py:L439-L441](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L439-L441): Predicates are parsed and validated via `parse_predicate()`, `validate_predicate_limits()`, and `validate_predicate_schema()`.
 - Output is emitted solely as declarative Python dictionaries containing allowlisted string constants, integers, floats, booleans, and nested dictionaries.
 
 ---
 
 ## 9. Are secrets kept out of logs and error messages?
 
-**Answer:** 
-**Partially.** While `self.api_key` is not intentionally logged by the application, **raw exception strings (`str(e)`) from the OpenAI SDK are logged directly and exposed in the public `fallback_reason` response field without redaction**.
+**Answer:** **YES.**
+- `sanitize_secret_text()` proactively scrubs `self.api_key`, bearer tokens (`Bearer [REDACTED]`), and OpenAI-style API keys (`sk-[REDACTED]`) before strings are passed to `logger.warning()` or returned in user-visible `fallback_reason` fields.
+- The `--check` CLI tool prints `API Key: [CONFIGURED]` or `[NOT CONFIGURED]`, never printing the key.
 
 **File & Line References:**
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L164): `self.api_key = api_key or os.getenv("LLM_API_KEY", "")`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L628-L631): `last_error = str(e)` -> `raise AIEngineError(f"Hardcoded path failed after retries: {last_error}")`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L701-L702): `logger.warning(f"Generic pipeline failed ({fallback_err}). Initiating fallback routing.")` logs the raw exception.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L712): `hardcoded_plan["fallback_reason"] = f"Generic pipeline failed ({fallback_err})"`. Raw exception details are attached to the API response.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L720): `fixture_res["fallback_reason"] = f"Live models failed ({fallback_err})"`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L726): `fallback_reason: f"Generic pipeline failed: {fallback_err}. Instruction is outside known domains."`.
-- [ai/ai_engine.py](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L790): `fix["fallback_reason"] = str(err)`.
-- **Vulnerability**: If an `openai.AuthenticationError` or HTTP gateway error includes request headers, URL parameters, or authentication error responses that echo partial authorization tokens, this raw text is written into the application logger and returned in the user-visible `fallback_reason` payload without secret masking.
+- [ai/ai_engine.py:L69-L78](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L69-L78): `sanitize_secret_text()` definition.
+- [ai/ai_engine.py:L624, L824, L837, L866, L926, L938](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L624-L938): Applied across all exception handlers and logging points.
+- [ai/ai_engine.py:L1000](file:///e:/Monkey/Code-Monkey/ai/ai_engine.py#L1000): In `--check`, masks key status.
 
 ---
 
 ## Prioritized List of Problems Found
 
-1. **[HIGH] Timeout Mismatch and Unbounded Elapsed Time**:
-   - `LLM_TIMEOUT_SECONDS` (default 60s) exceeds `LLM_TOTAL_BUDGET_SECONDS` (default 45s).
-   - Individual LLM calls and retry loops do not clamp their timeout to the remaining budget (`remaining = total_budget - elapsed`). A single hanging call or retry sequence can blow past the budget limit before the engine can trigger a fallback.
+1. **[LOW / CONTRACT] Unenforced Schema Contract on `generate_rewrite` Outcomes**:
+   - `outcomes` accepts arbitrary `Optional[Dict[str, Any]]` without a Pydantic model enforcing simulator output structure (e.g. `affected_ids`, branch IDs, counts). Defining a strict `SimulationOutcomes` Pydantic model would solidify the contract with Person 3.
 
-2. **[HIGH] Missing Validation for `update_set` Keys and Value Types**:
-   - `OperationTemplate.update_set` and `BranchPlan.update_set` are completely unvalidated.
-   - The AI model could produce update operations targeting non-existent fields or invalid data types without triggering a schema validation error.
-
-3. **[MEDIUM] Secret Leakage Risk in `fallback_reason` and Logging**:
-   - Raw exception strings `str(e)` are logged directly with `logger.warning()` and embedded directly into returned dictionaries under `"fallback_reason"`.
-   - Any API key or authentication header echoed by upstream proxies or the client library during connection/auth failures could be exposed.
-
-4. **[MEDIUM] Operational Inconsistency with `"restore"`**:
-   - `"restore"` is in `AllowedOperation` in `plan_schema.py` and `GENERIC_ANALYZE_PROMPT`, but neither prompt few-shots nor schema models specify what arguments `"restore"` takes. Meanwhile, fixtures and legacy prompts reject backup restore instructions as unsupported.
-
-5. **[LOW] Lack of Schema Enforcement on `outcomes` in `generate_rewrite`**:
-   - `generate_rewrite` accepts `Optional[Dict[str, Any]]` or `Any` with zero shape validation, making the simulator-to-rewrite contract implicit rather than strongly typed.
-
-6. **[LOW] Missing Collection-Level Duplicate Branch ID Validator**:
-   - While `BranchPlan` validates individual branch IDs and `build_branches` assigns them from `["A", "B", ...]`, there is no Pydantic validator guaranteeing uniqueness across a list of branches if loaded from external sources or fixtures.
-
-7. **[LOW / INFORMATIONAL] Hardcoded Default Model ID**:
-   - `"qwen2.5:7b"` is hardcoded on line 163 of `ai/ai_engine.py` as a fallback default when `LLM_MODEL` is absent.
+2. **[LOW / DEFENSIVE] Collection-Level Branch ID Uniqueness Validator**:
+   - While `build_branches` guarantees unique IDs sequentially, there is no root collection validator asserting unique IDs if branches are loaded from arbitrary external sources or custom fixtures.

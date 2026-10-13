@@ -19,3 +19,10 @@ logs/
 # beside it.
 /.plugins/
 /.opencode-skills/
+
+# Python & Testing Caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+eval/results/
+ai/eval/results/
