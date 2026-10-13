@@ -40,7 +40,7 @@ export default function MultiverseScene({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6))
     renderer.setClearColor(0x11151c, 0)
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.1
+    renderer.toneMappingExposure = 0.84
     renderer.domElement.setAttribute("aria-hidden", "true")
     element.appendChild(renderer.domElement)
     const scene = new THREE.Scene()
@@ -51,11 +51,11 @@ export default function MultiverseScene({
     const environment = pmrem.fromScene(room, 0.04)
     scene.environment = environment.texture
     room.dispose()
-    scene.add(new THREE.AmbientLight(0xd7e2ff, 1.4))
-    const key = new THREE.DirectionalLight(0xf1f5ff, 5)
+    scene.add(new THREE.AmbientLight(0xd7e2ff, 0.82))
+    const key = new THREE.DirectionalLight(0xf1f5ff, 2.7)
     key.position.set(-3, 6, 8)
     scene.add(key)
-    const rim = new THREE.DirectionalLight(0x9facff, 2)
+    const rim = new THREE.DirectionalLight(0x9facff, 0.8)
     rim.position.set(5, 1, -4)
     scene.add(rim)
 
@@ -63,13 +63,13 @@ export default function MultiverseScene({
     glowCanvas.width = glowCanvas.height = 128
     const context = glowCanvas.getContext("2d")!
     const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64)
-    gradient.addColorStop(0, "rgba(255,255,255,.65)")
-    gradient.addColorStop(0.2, "rgba(255,255,255,.22)")
+    gradient.addColorStop(0, "rgba(255,255,255,.38)")
+    gradient.addColorStop(0.2, "rgba(255,255,255,.12)")
     gradient.addColorStop(1, "rgba(255,255,255,0)")
     context.fillStyle = gradient
     context.fillRect(0, 0, 128, 128)
     const glowTexture = new THREE.CanvasTexture(glowCanvas)
-    const colors = [0xa3ecd0, 0xb194f5, 0x8ed9f2]
+    const colors = [0x83c9a8, 0x9480cf, 0x72b5ca]
     const positions = [
       new THREE.Vector3(-2.9, 0.8, 0),
       new THREE.Vector3(0.2, 2.1, -1),
@@ -104,7 +104,7 @@ export default function MultiverseScene({
       const glowMaterial = new THREE.MeshStandardMaterial({
         color: colors[i],
         emissive: colors[i],
-        emissiveIntensity: 2.1,
+        emissiveIntensity: 1.25,
         roughness: 0.2,
         metalness: 0.35,
       })
@@ -129,13 +129,13 @@ export default function MultiverseScene({
         color: colors[i],
         metalness: 0.05,
         roughness: 0.13,
-        transmission: 0.88,
+        transmission: 0.62,
         thickness: 0.6,
         ior: 1.45,
         transparent: true,
         opacity: 0.88,
         side: THREE.DoubleSide,
-        envMapIntensity: 1.8,
+        envMapIntensity: 0.9,
       })
       const pane = new THREE.Mesh(new THREE.CircleGeometry(1.13, 80), glass)
       pane.position.z = -0.11
@@ -204,16 +204,16 @@ export default function MultiverseScene({
           map: glowTexture,
           color: colors[i],
           transparent: true,
-          opacity: 0.4,
+          opacity: 0.22,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
         }),
       )
-      aura.scale.set(5.8, 5.8, 1)
+      aura.scale.set(4.8, 4.8, 1)
       aura.position.copy(position).add(new THREE.Vector3(0, 0, -0.8))
       scene.add(aura)
       auras.push(aura)
-      const point = new THREE.PointLight(colors[i], 8, 7, 2)
+      const point = new THREE.PointLight(colors[i], 2.2, 5.5, 2)
       point.position.copy(position).add(new THREE.Vector3(0, 0, 1.5))
       scene.add(point)
       const curve = new THREE.CatmullRomCurve3([
@@ -239,7 +239,7 @@ export default function MultiverseScene({
       new THREE.MeshStandardMaterial({
         color: 0xd5ffe9,
         emissive: 0xa9eacc,
-        emissiveIntensity: 1.3,
+        emissiveIntensity: 0.48,
         metalness: 0.5,
         roughness: 0.1,
       }),
@@ -274,9 +274,9 @@ export default function MultiverseScene({
     composer.addPass(new RenderPass(scene, camera))
     const bloom = new UnrealBloomPass(
       new THREE.Vector2(800, 700),
-      0.65,
-      0.6,
-      0.9,
+      0.32,
+      0.48,
+      1.12,
     )
     composer.addPass(bloom)
     composer.addPass(new OutputPass())
@@ -339,18 +339,23 @@ export default function MultiverseScene({
         portal.position.y =
           positions[i].y + Math.sin(elapsed * 0.65 + i * 2) * 0.085
         const active = current.hovered === i || current.selected === i
+        portal.position.z = THREE.MathUtils.lerp(
+          portal.position.z,
+          positions[i].z + (active ? 1.15 : 0),
+          1 - Math.exp(-dt * 5),
+        )
         rings[i].material.emissiveIntensity = THREE.MathUtils.lerp(
           rings[i].material.emissiveIntensity,
-          active ? 3.5 : 1.8,
+          active ? 1.55 : 0.72,
           ease,
         )
-        auras[i].material.opacity = active ? 0.65 : 0.35
+        auras[i].material.opacity = active ? 0.3 : 0.14
         cores[i].rotation.set(
           elapsed * 0.17 + i,
           elapsed * 0.23,
           elapsed * 0.08,
         )
-        paths[i].material.opacity = active ? 0.95 : 0.45
+        paths[i].material.opacity = active ? 0.72 : 0.32
         const count = paths[i].geometry.index!.count
         paths[i].geometry.setDrawRange(
           0,
