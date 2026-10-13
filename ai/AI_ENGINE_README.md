@@ -5,6 +5,26 @@ This module provides the hybrid open-weight AI interpretation and ambiguity anal
 **Core Principle**: *The AI discovers alternative meanings and structures; the simulator verifies their real-world consequences.*  
 **Safety Principle**: The AI never produces code, regex, shell, or SQL. It produces strictly validated, declarative data models. A fixed Python engine interprets it.
 
+## Local HTTP API
+
+Install the packages from `ai/requirements.txt`, then launch the API at the repository root:
+
+```bash
+python -m pip install -r ai/requirements.txt
+python -m uvicorn ai.api:app --reload --port 8000
+```
+
+The React development server proxies `/api` to this service. `GET /api/healthz` is a
+readiness check. `POST /api/analyze` accepts `{"instruction":"Delete old user records."}`;
+it returns validated interpretation plans, deterministic synthetic outcomes, and a
+comparison summary. Unsupported and incomplete analyses are returned as such and
+must not be presented by the client as successful runs.
+
+Set `SCM_CORS_ORIGINS` to a comma-separated allowlist of frontend origins when the
+API is deployed separately. Set `SCM_API_TARGET` for the Vite development proxy,
+or `VITE_API_BASE_URL` for a deployed frontend. Configure model credentials only
+in the backend's `ai/.env`; never expose them through `VITE_*` variables.
+
 ---
 
 ## 1. Hybrid Architecture & Routing Diagram

@@ -37,6 +37,19 @@ pnpm --dir client build
 pnpm --dir client format
 ```
 
+Run the local analysis API from the repository root in a separate terminal:
+```sh
+python -m pip install -r ai/requirements.txt
+python -m uvicorn ai.api:app --reload --port 8000
+```
+
+The Vite dev server proxies `/api` requests to `http://127.0.0.1:8000`. The API
+uses the deterministic fixtures when no model provider is configured. When a
+provider is configured in `ai/.env`, submitted instruction text may be sent to
+that provider for interpretation; all resulting plans are simulated against
+synthetic data only. Set `SCM_API_TARGET` to change the development API address,
+or `VITE_API_BASE_URL` to point a deployed frontend at its API.
+
 The Problem
 Operational instructions can be grammatically correct and still omit crucial details, including:
 - Target or environment: Which database, service, tenant, or region is affected?
