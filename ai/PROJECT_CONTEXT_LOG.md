@@ -239,4 +239,19 @@ Preserved for 100% backward compatibility with the initial contract.
   - Created 7 mocked unit tests covering all 4 verdicts (`resolved` via agreement and single branch, `reduced`, `not_improved`, `unverifiable`), injected simulator callable attribution, and verification that model claims are never trusted over simulator outcomes.
   - Test suite now: **60 passed**, 2 skipped (100% offline pass rate).
 
+### Entry 12: Part 7 Evaluation Harness
+- **Evaluation Benchmark (`ai/eval/instructions.json`)**:
+  - Created 20 labeled benchmark instructions with metadata (`id`, `text`, `domain_hint`, `expected`, `notes`).
+  - Covers supported ambiguous (8), already specific (2), vague (2), unsupported (4), adversarial prompt injections (2), multilingual (1), and empty/whitespace (1).
+- **Harness Runner (`ai/eval/run_eval.py`)**:
+  - Implemented evaluation runner with flags `--mode` (live or fixture), `--limit`, and `--out`.
+  - Executes `analyze_and_branch`, runs reference simulator on supported results, and triggers `verify_rewrite` on divergent results.
+  - Generates machine-readable `results.json` and human-readable `report.md`.
+  - Reports all required metrics: first-attempt validity, success after retries, source distribution, average branches, divergence rate, correct unsupported rate, false-support rate (0%), injection resistance violations (0%), rewrite verdict distribution, latencies (p50, max), and failures list.
+- **Testing & Verification (`ai/tests/test_eval_metrics.py`)**:
+  - Unit-tested metrics arithmetic on a deterministic synthetic result set.
+  - Verified harness in `--mode fixture` over all 20 instructions: 100% schema validity, 0% false-support rate, 0 injection violations.
+  - Full test suite: **61 passed**, 2 skipped in ~1.05s.
+
+
 
