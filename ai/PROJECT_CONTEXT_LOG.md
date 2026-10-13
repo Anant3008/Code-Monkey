@@ -253,5 +253,8 @@ Preserved for 100% backward compatibility with the initial contract.
   - Verified harness in `--mode fixture` over all 20 instructions: 100% schema validity, 0% false-support rate, 0 injection violations.
   - Full test suite: **61 passed**, 2 skipped in ~1.05s.
 
-
-
+### Entry 13: Endpoint Update to Ollama Cloud
+- Updated `ai/.env` to configure `LLM_BASE_URL=https://ollama.com/v1`.
+- Ran `python -m ai.ai_engine --check`: confirmed connection, model `gpt-oss:20b` discovered, test chat completion succeeded with latency 705.92ms (`PASS`).
+- Ran `python -m ai.list_models`: discovered 18 models available on the endpoint.
+- Full test suite: **61 passed**, 2 skipped in ~1.11s.
