@@ -28,3 +28,6 @@ venv/
 logs/
 .DS_Store
 Thumbs.db
+
+.venv
+.claude
