@@ -22,6 +22,16 @@ from openai import (
 )
 
 try:
+    from dotenv import load_dotenv
+    ai_env = Path(__file__).resolve().parent / ".env"
+    if ai_env.exists():
+        load_dotenv(dotenv_path=ai_env)
+    else:
+        load_dotenv()
+except ImportError:
+    pass
+
+try:
     from ai.prompts import (
         build_analysis_messages,
         build_generic_analyze_messages,
@@ -39,6 +49,7 @@ try:
         parse_predicate,
         validate_predicate_limits,
         validate_predicate_schema,
+        validate_operation_and_update_set,
         WORLD_TODAY
     )
 except ImportError:
@@ -59,6 +70,7 @@ except ImportError:
         parse_predicate,
         validate_predicate_limits,
         validate_predicate_schema,
+        validate_operation_and_update_set,
         WORLD_TODAY
     )
 
@@ -368,11 +380,15 @@ class AIEngine:
         - Structural deduplication of predicates.
         """
         warnings = []
+        validate_operation_and_update_set(operation_template.operation, operation_template.update_set, field_types)
+
         if not ambiguous_terms:
             warnings.append("no ambiguity found; single baseline branch generated")
             resolved_where = substitute_term_refs(operation_template.where_template, {})
-            validate_predicate_limits(parse_predicate(resolved_where))
-            validate_predicate_schema(parse_predicate(resolved_where), field_types, allow_term_ref=False)
+            parsed_baseline = parse_predicate(resolved_where)
+            validate_predicate_limits(parsed_baseline)
+            pw = validate_predicate_schema(parsed_baseline, field_types, allow_term_ref=False)
+            warnings.extend(pw)
             plan = BranchPlan(
                 id="A",
                 title="Baseline Execution",
@@ -432,7 +448,8 @@ class AIEngine:
             # Validate limits and schema
             parsed = parse_predicate(resolved_where)
             validate_predicate_limits(parsed, max_depth=4, max_nodes=12)
-            validate_predicate_schema(parsed, field_types, allow_term_ref=False)
+            pw = validate_predicate_schema(parsed, field_types, allow_term_ref=False)
+            warnings.extend(pw)
 
             bid = branch_ids[len(branches)]
             titles = [f"{t}: {m.label}" for t, m in combo.items()]
@@ -783,6 +800,22 @@ class AIEngine:
 
         def get_remaining() -> float:
             return deadline - time.time()
+
+        # Step 0: Restore instructions are strictly unsupported
+        if "restore" in instruction.lower():
+            timings_ms["total"] = round((time.time() - start_time) * 1000, 2)
+            return {
+                "status": "unsupported",
+                "source": "fixture_fallback" if (self.fixture_mode or not self.api_key or self.force_fallback) else "live_generic",
+                "fallback_reason": "Restore operations are unsupported as there is no defined source data to restore from.",
+                "reason": "Restore operations are unsupported as there is no defined source data to restore from. Supported operations are delete, archive, update, flag.",
+                "interpretations": [],
+                "candidate_ambiguities": [],
+                "branches": [],
+                "suggested_rewrite": "",
+                "timings_ms": timings_ms,
+                "model_info": {"model": self.model or "fixture", "mode": "fixture" if (self.fixture_mode or not self.api_key or self.force_fallback) else "live"}
+            }
 
         # Step 1: Demo Switch / Fixture Check
         if self.force_fallback or force_fallback or self.fixture_mode or not self.api_key:

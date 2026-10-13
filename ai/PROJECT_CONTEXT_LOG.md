@@ -153,4 +153,34 @@ Preserved for 100% backward compatibility with the initial contract.
   - Added 6 new unit tests for mocked system date invariance, budget-bounded execution, model config validation, fixture mode without model, timings_ms validation, and `--check` CLI functionality.
   - Total test suite: 35 passed, 2 skipped (100% pass rate).
 
+### Entry 7: Part 3 Tightened Plan Language (Simulator Contract)
+- **Operation Rules (3.1)**:
+  - Removed `"restore"` from `AllowedOperation` (`delete`, `archive`, `update`, `flag`). Instructions requesting restore return status `"unsupported"` with honest reason.
+  - `delete`: removes matched records; `update_set` must be null.
+  - `archive` and `update`: require non-empty `update_set`.
+  - `flag`: sets reserved `_flagged: true`; `update_set` must be null.
+  - Reserved fields starting with `_` are forbidden in `EntitySchema` and `update_set`.
+  - Primary `id` field cannot be modified in `update_set`.
+- **Definition of Affected (3.2)**:
+  - `affected_ids`: records matched by `where`, in original record order, whether or not a value changed.
+  - `affected_count = len(affected_ids)`.
+- **Null Semantics / Two-Valued Logic (3.3)**:
+  - `is_null` is true iff None or missing; `not_null` is opposite.
+  - On null or missing values, all other leaf predicates (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in`, `older_than_days`, `newer_than_days`) evaluate to `False`.
+  - Boolean `not(leaf)` over null evaluates to `True`.
+  - Validator issues warning when `not` wraps a leaf over a nullable field.
+- **Date & Comparison Semantics (3.4 & 3.5)**:
+  - Calendar days against `world.today`: `older_than_days N` is `(today - val).days >= N`, `newer_than_days N` is `(today - val).days < N`.
+  - Future-dated values have negative age: `older_than` is False, `newer_than` is True.
+  - `eq` and `ne` strictly compare same-typed primitives. Relational comparisons (`lt`, `lte`, `gt`, `gte`) only allowed for `int`, `float`, and `date`. `string` and `bool` support only `eq`, `ne`, and `in`.
+- **Validator Hardening (3.6)**:
+  - `in` predicate capped at max 20 items with primitive type checking.
+  - `compare` value type matches declared field type.
+  - Built simulator reference interpreter `evaluate_predicate` and `compute_affected` in `ai/plan_schema.py`.
+- **Local Environment Configuration**:
+  - Created uncommitted `ai/.env` configured with Ollama endpoint and user-provided API key.
+- **Testing**:
+  - Expanded test suite from 37 to 47 tests (45 passed, 2 skipped in 1.00s).
+
+
 

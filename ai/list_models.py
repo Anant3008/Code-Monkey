@@ -6,12 +6,17 @@ Usage:
 """
 import os
 import sys
+from pathlib import Path
 from openai import OpenAI
 
 # Try loading .env if python-dotenv is installed
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    ai_env = Path(__file__).resolve().parent / ".env"
+    if ai_env.exists():
+        load_dotenv(dotenv_path=ai_env)
+    else:
+        load_dotenv()
 except ImportError:
     pass
 

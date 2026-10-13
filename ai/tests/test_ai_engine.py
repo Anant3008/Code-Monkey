@@ -240,7 +240,8 @@ def test_fixture_restore_latest_backup_unsupported():
     res = engine.generate_interpretations("Restore the latest backup if necessary.")
 
     assert res["status"] == "unsupported"
-    assert "outside the supported" in res["reason"].lower() or "outside the mvp" in res["reason"].lower()
+    assert "restore" in res["reason"].lower()
+    assert "unsupported" in res["reason"].lower() or "no defined" in res["reason"].lower()
     assert res["interpretations"] == []
     assert res["candidate_ambiguities"] == []
 
@@ -256,9 +257,11 @@ def test_fixture_unknown_instruction():
 
 def test_top_level_exported_function():
     """Verify top-level generate_interpretations() works directly."""
-    res = generate_interpretations("Delete old user records.")
-    assert res["status"] == "ok"
-    assert len(res["interpretations"]) == 3
+    from ai_engine import _engine
+    with patch.object(_engine, "fixture_mode", True):
+        res = generate_interpretations("Delete old user records.")
+        assert res["status"] == "ok"
+        assert len(res["interpretations"]) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -680,4 +683,260 @@ def test_live_generic_instructions():
         res = engine.analyze_and_branch(inst)
         assert res["status"] == "ok"
         assert res["source"] in ("live_generic", "live_hardcoded", "fixture_fallback")
+
+
+# ---------------------------------------------------------------------------
+# Part 3 Specific Plan Language, Semantics & Validator Tests
+# ---------------------------------------------------------------------------
+
+def test_plan_validation_rejects_restore_operation():
+    """Operation 'restore' is removed from allowlist and rejected by validator."""
+    from plan_schema import BranchPlan
+    with pytest.raises(Exception):
+        BranchPlan(
+            id="A",
+            title="Restore Test",
+            assumption="Restore backup data",
+            operation="restore",
+            where={"op": "compare", "field": "status", "cmp": "eq", "value": "old"},
+            explanation="Restore should fail"
+        )
+
+
+def test_operation_and_update_set_rules():
+    """Tests operation rules for delete, archive, update, and flag."""
+    from plan_schema import BranchPlan
+
+    # delete requires null update_set
+    with pytest.raises(ValueError, match="does not permit 'update_set'"):
+        BranchPlan(
+            id="A",
+            title="Delete with update_set",
+            assumption="Test assumption",
+            operation="delete",
+            update_set={"status": "deleted"},
+            where={"op": "is_null", "field": "email"},
+            explanation="Invalid plan"
+        )
+
+    # flag requires null update_set
+    with pytest.raises(ValueError, match="does not permit 'update_set'"):
+        BranchPlan(
+            id="A",
+            title="Flag with update_set",
+            assumption="Test assumption",
+            operation="flag",
+            update_set={"_flagged": True},
+            where={"op": "is_null", "field": "email"},
+            explanation="Invalid plan"
+        )
+
+    # archive requires non-empty update_set
+    with pytest.raises(ValueError, match="requires a non-empty 'update_set'"):
+        BranchPlan(
+            id="A",
+            title="Archive without update_set",
+            assumption="Test assumption",
+            operation="archive",
+            update_set=None,
+            where={"op": "is_null", "field": "email"},
+            explanation="Invalid plan"
+        )
+
+    # update requires non-empty update_set
+    with pytest.raises(ValueError, match="requires a non-empty 'update_set'"):
+        BranchPlan(
+            id="A",
+            title="Update with empty update_set",
+            assumption="Test assumption",
+            operation="update",
+            update_set={},
+            where={"op": "is_null", "field": "email"},
+            explanation="Invalid plan"
+        )
+
+
+def test_reserved_fields_rejected_in_schema_and_update_set():
+    """Reserved fields starting with '_' cannot be defined in schema or modified in update_set."""
+    from plan_schema import FieldDefinition, validate_operation_and_update_set
+
+    # EntitySchema rejects fields starting with '_'
+    with pytest.raises(ValueError, match="reserved fields starting with '_'"):
+        FieldDefinition(name="_flagged", type="bool")
+
+    # update_set cannot use keys starting with '_'
+    with pytest.raises(ValueError, match="reserved prefix '_'"):
+        validate_operation_and_update_set("update", {"_flagged": True})
+
+    # update_set cannot modify 'id'
+    with pytest.raises(ValueError, match="cannot modify the primary 'id' field"):
+        validate_operation_and_update_set("update", {"id": "new_id"})
+
+
+def test_update_set_schema_key_and_type_validation():
+    """update_set keys must exist in schema and match declared types."""
+    from plan_schema import validate_operation_and_update_set
+
+    schema = {"status": "string", "count": "int", "active": "bool"}
+
+    # Unknown key rejected
+    with pytest.raises(ValueError, match="does not exist in entity schema"):
+        validate_operation_and_update_set("update", {"unknown_key": "val"}, schema)
+
+    # Type mismatch rejected: count expected int, got str
+    with pytest.raises(ValueError, match="Expected int for field 'count'"):
+        validate_operation_and_update_set("update", {"count": "five"}, schema)
+
+    # Type mismatch rejected: bool passed where int required
+    with pytest.raises(ValueError, match="Expected int for field 'count'"):
+        validate_operation_and_update_set("update", {"count": True}, schema)
+
+    # Valid update_set passes
+    validate_operation_and_update_set("update", {"status": "archived", "count": 10, "active": False}, schema)
+
+
+def test_in_predicate_limits_and_typing():
+    """InPredicate enforces max 20 items and type conformance."""
+    from plan_schema import parse_predicate, validate_predicate_schema
+
+    schema = {"status": "string", "score": "int"}
+
+    # Max 20 items enforced by Pydantic
+    with pytest.raises(Exception):
+        parse_predicate({"op": "in", "field": "status", "values": [f"v{i}" for i in range(21)]})
+
+    # Type mismatch in 'in' predicate: score expected int, got string in list
+    pred = parse_predicate({"op": "in", "field": "score", "values": [1, 2, "three"]})
+    with pytest.raises(ValueError, match="Expected int for field 'score'"):
+        validate_predicate_schema(pred, schema)
+
+
+def test_compare_predicate_typing_and_operator_constraints():
+    """Relational comparisons only valid for int, float, and date. String and bool only eq, ne, in."""
+    from plan_schema import parse_predicate, validate_predicate_schema
+
+    schema = {"name": "string", "is_admin": "bool", "age": "int", "created_at": "date"}
+
+    # Type mismatch: name is string, value is int
+    p1 = parse_predicate({"op": "compare", "field": "name", "cmp": "eq", "value": 123})
+    with pytest.raises(ValueError, match="Expected string for field 'name'"):
+        validate_predicate_schema(p1, schema)
+
+    # Operator constraint: relational 'lt' on string forbidden
+    p2 = parse_predicate({"op": "compare", "field": "name", "cmp": "lt", "value": "alice"})
+    with pytest.raises(ValueError, match="Relational operator 'lt' cannot be used on string field 'name'"):
+        validate_predicate_schema(p2, schema)
+
+    # Operator constraint: relational 'gt' on bool forbidden
+    p3 = parse_predicate({"op": "compare", "field": "is_admin", "cmp": "gt", "value": True})
+    with pytest.raises(ValueError, match="Relational operator 'gt' cannot be used on bool field 'is_admin'"):
+        validate_predicate_schema(p3, schema)
+
+    # Valid comparisons on int and date pass
+    p4 = parse_predicate({"op": "compare", "field": "age", "cmp": "gte", "value": 18})
+    validate_predicate_schema(p4, schema)
+
+    p5 = parse_predicate({"op": "compare", "field": "created_at", "cmp": "lt", "value": "2025-01-01"})
+    validate_predicate_schema(p5, schema)
+
+
+def test_null_semantics_two_valued_logic():
+    """
+    Two-valued logic:
+    - is_null is True iff missing/None.
+    - Leaf predicates (eq, ne, lt, in, older_than) on null/missing ALWAYS evaluate to False.
+    - not(leaf on null) evaluates to True.
+    """
+    from plan_schema import parse_predicate, evaluate_predicate
+
+    record_null = {"id": "R1", "status": None, "age": None, "created_at": None}
+    record_missing = {"id": "R2"}
+    record_valid = {"id": "R3", "status": "active", "age": 25, "created_at": "2025-01-01"}
+
+    # is_null
+    p_null = parse_predicate({"op": "is_null", "field": "status"})
+    assert evaluate_predicate(p_null, record_null) is True
+    assert evaluate_predicate(p_null, record_missing) is True
+    assert evaluate_predicate(p_null, record_valid) is False
+
+    # not_null
+    p_not_null = parse_predicate({"op": "not_null", "field": "status"})
+    assert evaluate_predicate(p_not_null, record_null) is False
+    assert evaluate_predicate(p_not_null, record_missing) is False
+    assert evaluate_predicate(p_not_null, record_valid) is True
+
+    # eq on null is False
+    p_eq = parse_predicate({"op": "compare", "field": "status", "cmp": "eq", "value": "active"})
+    assert evaluate_predicate(p_eq, record_null) is False
+    assert evaluate_predicate(p_eq, record_valid) is True
+
+    # ne on null is ALSO False under two-valued logic!
+    p_ne = parse_predicate({"op": "compare", "field": "status", "cmp": "ne", "value": "active"})
+    assert evaluate_predicate(p_ne, record_null) is False
+
+    # older_than_days on null is False
+    p_older = parse_predicate({"op": "older_than_days", "field": "created_at", "days": 30})
+    assert evaluate_predicate(p_older, record_null) is False
+
+    # not(older_than_days on null) is True!
+    p_not_older = parse_predicate({"op": "not", "arg": {"op": "older_than_days", "field": "created_at", "days": 30}})
+    assert evaluate_predicate(p_not_older, record_null) is True
+
+
+def test_date_semantics_and_future_dates():
+    """
+    Date semantics:
+    - older_than_days N: (today - val).days >= N
+    - newer_than_days N: (today - val).days < N
+    - Future dates have negative age: older_than is False, newer_than is True.
+    """
+    from plan_schema import parse_predicate, evaluate_predicate
+
+    today_str = "2026-01-01"
+    # 90 days ago: 2025-10-03
+    rec_exact_90 = {"id": "R1", "dt": "2025-10-03"}
+    # 89 days ago: 2025-10-04
+    rec_89 = {"id": "R2", "dt": "2025-10-04"}
+    # Future date: 2026-06-01
+    rec_future = {"id": "R3", "dt": "2026-06-01"}
+
+    p_older_90 = parse_predicate({"op": "older_than_days", "field": "dt", "days": 90})
+    assert evaluate_predicate(p_older_90, rec_exact_90, today_str=today_str) is True
+    assert evaluate_predicate(p_older_90, rec_89, today_str=today_str) is False
+    assert evaluate_predicate(p_older_90, rec_future, today_str=today_str) is False
+
+    p_newer_90 = parse_predicate({"op": "newer_than_days", "field": "dt", "days": 90})
+    assert evaluate_predicate(p_newer_90, rec_exact_90, today_str=today_str) is False
+    assert evaluate_predicate(p_newer_90, rec_89, today_str=today_str) is True
+    assert evaluate_predicate(p_newer_90, rec_future, today_str=today_str) is True
+
+
+def test_affected_definition_and_ordering():
+    """affected_ids = matched IDs in original record order; affected_count = len(affected_ids)."""
+    from plan_schema import parse_predicate, compute_affected
+
+    records = [
+        {"id": "U3", "status": "dormant"},
+        {"id": "U1", "status": "active"},
+        {"id": "U2", "status": "dormant"},
+        {"id": "U4", "status": "dormant"},
+    ]
+    pred = parse_predicate({"op": "compare", "field": "status", "cmp": "eq", "value": "dormant"})
+
+    ids, count = compute_affected(pred, records)
+    assert ids == ["U3", "U2", "U4"]  # strictly preserves original record order
+    assert count == 3
+
+
+def test_validator_warning_on_not_wrapping_nullable_field():
+    """Validator issues non-fatal warning when 'not' wraps a leaf over a nullable field."""
+    from plan_schema import parse_predicate, validate_predicate_schema
+
+    schema = {"last_active_at": "date"}
+    pred = parse_predicate({"op": "not", "arg": {"op": "older_than_days", "field": "last_active_at", "days": 90}})
+    warnings = validate_predicate_schema(pred, schema)
+
+    assert len(warnings) == 1
+    assert "will evaluate to True for null/missing values under two-valued logic" in warnings[0]
+
 

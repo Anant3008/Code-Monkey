@@ -253,8 +253,8 @@
   "restore the latest backup if necessary.": {
     "status": "unsupported",
     "source": "fixture_fallback",
-    "fallback_reason": "Instruction involves backup restoration which is outside the simulated actions scope.",
-    "reason": "Backup and restore operations are outside the MVP simulator's supported action scope. Only user-cleanup actions ('delete_users') are supported.",
+    "fallback_reason": "Restore operations are unsupported as there is no defined source data to restore from.",
+    "reason": "Restore operations are unsupported as there is no defined source data to restore from. Only declarative data operations ('delete', 'archive', 'update', 'flag') are supported.",
     "interpretations": [],
     "candidate_ambiguities": [],
     "suggested_rewrite": "",
