@@ -224,3 +224,19 @@ Preserved for 100% backward compatibility with the initial contract.
   - Added `test_prompt_embedded_examples_validate_against_schema`: programmatically validates all embedded few-shot JSON structures against `GenericAnalysisOutput`, `LegacyInterpretationSchema`, and predicate AST limits/schema validators.
   - Full test suite: **53 passed**, 2 skipped in ~0.96s.
 
+### Entry 11: Part 6 Rewrite Verification Loop
+- **Verification Engine (`ai/verify.py`)**:
+  - Implemented `verify_rewrite(original_instruction, rewrite, before_outcomes=None, simulate=None, engine=None)`.
+  - Runs `analyze_and_branch` on the rewrite.
+  - Executes simulation using injected `simulate` callable or defaults to `reference_simulator.run_all`.
+  - Computes verdict strictly from simulator outcomes (never trusting model's claim of clarity):
+    - `"resolved"`: all branches agree (`after_distinct_sets == 1`) or no ambiguity found (`after_branch_count == 1`).
+    - `"reduced"`: fewer distinct outcome sets than before (`after_distinct_sets < before_distinct_sets`).
+    - `"not_improved"`: same or more distinct outcome sets than before (`after_distinct_sets >= before_distinct_sets`).
+    - `"unverifiable"`: live path unavailable, analysis failed, or unsupported.
+  - Labels which simulator was used (`"simulator_used": simulator_label`).
+- **Testing (`ai/tests/test_verify.py`)**:
+  - Created 7 mocked unit tests covering all 4 verdicts (`resolved` via agreement and single branch, `reduced`, `not_improved`, `unverifiable`), injected simulator callable attribution, and verification that model claims are never trusted over simulator outcomes.
+  - Test suite now: **60 passed**, 2 skipped (100% offline pass rate).
+
+
