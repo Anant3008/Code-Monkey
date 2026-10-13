@@ -7,27 +7,110 @@
     "entity_schema": {
       "name": "user",
       "fields": [
-        {"name": "id", "type": "string", "description": "Unique user ID"},
-        {"name": "email", "type": "string", "description": "User email address"},
-        {"name": "created_at", "type": "date", "description": "Account creation date"},
-        {"name": "last_active_at", "type": "date", "description": "Last activity timestamp"},
-        {"name": "status", "type": "string", "description": "User account status"}
+        {
+          "name": "id",
+          "type": "string",
+          "description": "Unique user ID"
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "User email address"
+        },
+        {
+          "name": "created_at",
+          "type": "date",
+          "description": "Account creation date"
+        },
+        {
+          "name": "last_active_at",
+          "type": "date",
+          "description": "Last activity timestamp"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "User account status"
+        }
       ]
     },
     "world": {
       "entity": "user",
       "today": "2026-01-01",
       "records": [
-        {"id": "U01", "email": "alice@corp.com", "created_at": "2025-01-10", "last_active_at": "2025-12-20", "status": "active"},
-        {"id": "U02", "email": "bob@dormant.com", "created_at": "2024-05-01", "last_active_at": "2025-05-01", "status": "dormant"},
-        {"id": "U03", "email": "carol@active.org", "created_at": "2025-01-15", "last_active_at": "2025-12-30", "status": "active"},
-        {"id": "U04", "email": "dave@old.io", "created_at": "2023-11-20", "last_active_at": "2025-01-10", "status": "dormant"},
-        {"id": "U05", "email": "eve@recent.com", "created_at": "2025-11-01", "last_active_at": "2025-12-15", "status": "active"},
-        {"id": "U06", "email": "frank@test.net", "created_at": "2025-08-14", "last_active_at": "2025-03-15", "status": "active"},
-        {"id": "U07", "email": "grace@loyal.com", "created_at": "2024-02-11", "last_active_at": "2025-12-28", "status": "active"},
-        {"id": "U08", "email": "heidi@edge.org", "created_at": "2025-10-03", "last_active_at": "2025-10-03", "status": "active", "_injected": true},
-        {"id": "U09", "email": "ivan@null.com", "created_at": "2025-10-01", "last_active_at": null, "status": "pending", "_injected": true},
-        {"id": "U10", "email": "judy@boundary.com", "created_at": "2025-10-03", "last_active_at": "2025-10-03", "status": "active", "_injected": true}
+        {
+          "id": "U01",
+          "email": "alice@corp.com",
+          "created_at": "2025-01-10",
+          "last_active_at": "2025-12-20",
+          "status": "active"
+        },
+        {
+          "id": "U02",
+          "email": "bob@dormant.com",
+          "created_at": "2024-05-01",
+          "last_active_at": "2025-05-01",
+          "status": "dormant"
+        },
+        {
+          "id": "U03",
+          "email": "carol@active.org",
+          "created_at": "2025-01-15",
+          "last_active_at": "2025-12-30",
+          "status": "active"
+        },
+        {
+          "id": "U04",
+          "email": "dave@old.io",
+          "created_at": "2023-11-20",
+          "last_active_at": "2025-01-10",
+          "status": "dormant"
+        },
+        {
+          "id": "U05",
+          "email": "eve@recent.com",
+          "created_at": "2025-11-01",
+          "last_active_at": "2025-12-15",
+          "status": "active"
+        },
+        {
+          "id": "U06",
+          "email": "frank@test.net",
+          "created_at": "2025-08-14",
+          "last_active_at": "2025-03-15",
+          "status": "active"
+        },
+        {
+          "id": "U07",
+          "email": "grace@loyal.com",
+          "created_at": "2024-02-11",
+          "last_active_at": "2025-12-28",
+          "status": "active"
+        },
+        {
+          "id": "U08",
+          "email": "heidi@edge.org",
+          "created_at": "2025-10-03",
+          "last_active_at": "2025-10-03",
+          "status": "active",
+          "_injected": true
+        },
+        {
+          "id": "U09",
+          "email": "ivan@null.com",
+          "created_at": "2025-10-01",
+          "last_active_at": null,
+          "status": "pending",
+          "_injected": true
+        },
+        {
+          "id": "U10",
+          "email": "judy@boundary.com",
+          "created_at": "2025-10-03",
+          "last_active_at": "2025-10-03",
+          "status": "active",
+          "_injected": true
+        }
       ]
     },
     "branches": [
@@ -37,8 +120,14 @@
         "assumption": "'Old' means no recorded activity for at least 90 days.",
         "operation": "delete",
         "update_set": null,
-        "where": {"op": "older_than_days", "field": "last_active_at", "days": 90},
-        "chosen_meanings": {"old": "inactive_90"},
+        "where": {
+          "op": "older_than_days",
+          "field": "last_active_at",
+          "days": 90
+        },
+        "chosen_meanings": {
+          "old": "inactive_90"
+        },
         "explanation": "Interprets 'old' as dormant user accounts based on last recorded activity timestamp."
       },
       {
@@ -47,8 +136,14 @@
         "assumption": "'Old' means account created more than 90 days ago regardless of recent activity.",
         "operation": "delete",
         "update_set": null,
-        "where": {"op": "older_than_days", "field": "created_at", "days": 90},
-        "chosen_meanings": {"old": "created_90"},
+        "where": {
+          "op": "older_than_days",
+          "field": "created_at",
+          "days": 90
+        },
+        "chosen_meanings": {
+          "old": "created_90"
+        },
         "explanation": "Filters strictly by account creation timestamp, endangering active long-term customers."
       },
       {
@@ -60,11 +155,20 @@
         "where": {
           "op": "or",
           "args": [
-            {"op": "older_than_days", "field": "last_active_at", "days": 90},
-            {"op": "is_null", "field": "last_active_at"}
+            {
+              "op": "older_than_days",
+              "field": "last_active_at",
+              "days": 90
+            },
+            {
+              "op": "is_null",
+              "field": "last_active_at"
+            }
           ]
         },
-        "chosen_meanings": {"old": "inactive_or_unknown"},
+        "chosen_meanings": {
+          "old": "inactive_or_unknown"
+        },
         "explanation": "Treats missing telemetry as inactivity without verifying account state."
       }
     ],
@@ -104,12 +208,18 @@
       {
         "term": "old",
         "description": "Could refer to duration since account creation or duration since last user activity.",
-        "interpretation_ids": ["A", "B"]
+        "interpretation_ids": [
+          "A",
+          "B"
+        ]
       },
       {
         "term": "missing activity dates",
         "description": "Does not specify whether accounts with null activity dates are preserved or purged.",
-        "interpretation_ids": ["A", "C"]
+        "interpretation_ids": [
+          "A",
+          "C"
+        ]
       }
     ],
     "suggested_rewrite": "Delete user accounts inactive for at least 90 days based on last recorded activity. Preserve accounts with missing activity dates and flag them for audit.",
@@ -126,27 +236,110 @@
     "entity_schema": {
       "name": "log_file",
       "fields": [
-        {"name": "id", "type": "string", "description": "Unique file ID"},
-        {"name": "filename", "type": "string", "description": "File path or name"},
-        {"name": "created_at", "type": "date", "description": "Log creation date"},
-        {"name": "size_mb", "type": "float", "description": "File size in MB"},
-        {"name": "is_archived", "type": "bool", "description": "Archive state"}
+        {
+          "name": "id",
+          "type": "string",
+          "description": "Unique file ID"
+        },
+        {
+          "name": "filename",
+          "type": "string",
+          "description": "File path or name"
+        },
+        {
+          "name": "created_at",
+          "type": "date",
+          "description": "Log creation date"
+        },
+        {
+          "name": "size_mb",
+          "type": "float",
+          "description": "File size in MB"
+        },
+        {
+          "name": "is_archived",
+          "type": "bool",
+          "description": "Archive state"
+        }
       ]
     },
     "world": {
       "entity": "log_file",
       "today": "2026-01-01",
       "records": [
-        {"id": "LOG-01", "filename": "app_2025_01.log", "created_at": "2025-01-10", "size_mb": 150.0, "is_archived": false},
-        {"id": "LOG-02", "filename": "app_2025_11.log", "created_at": "2025-11-01", "size_mb": 12.5, "is_archived": false},
-        {"id": "LOG-03", "filename": "app_2025_12.log", "created_at": "2025-12-25", "size_mb": 4.0, "is_archived": false},
-        {"id": "LOG-04", "filename": "error_2024.log", "created_at": "2024-11-20", "size_mb": 500.0, "is_archived": false},
-        {"id": "LOG-05", "filename": "audit_2025_10.log", "created_at": "2025-10-15", "size_mb": 80.0, "is_archived": true},
-        {"id": "LOG-06", "filename": "sys_2025_09.log", "created_at": "2025-09-10", "size_mb": 45.0, "is_archived": false},
-        {"id": "LOG-07", "filename": "debug_2025_12.log", "created_at": "2025-12-30", "size_mb": 0.5, "is_archived": false},
-        {"id": "LOG-08", "filename": "auth_2025_12_02.log", "created_at": "2025-12-02", "size_mb": 35.0, "is_archived": false, "_injected": true},
-        {"id": "LOG-09", "filename": "corrupt.log", "created_at": null, "size_mb": 0.0, "is_archived": false, "_injected": true},
-        {"id": "LOG-10", "filename": "nomatch.log", "created_at": "2026-01-01", "size_mb": 0.1, "is_archived": true, "_injected": true}
+        {
+          "id": "LOG-01",
+          "filename": "app_2025_01.log",
+          "created_at": "2025-01-10",
+          "size_mb": 150.0,
+          "is_archived": false
+        },
+        {
+          "id": "LOG-02",
+          "filename": "app_2025_11.log",
+          "created_at": "2025-11-01",
+          "size_mb": 12.5,
+          "is_archived": false
+        },
+        {
+          "id": "LOG-03",
+          "filename": "app_2025_12.log",
+          "created_at": "2025-12-25",
+          "size_mb": 4.0,
+          "is_archived": false
+        },
+        {
+          "id": "LOG-04",
+          "filename": "error_2024.log",
+          "created_at": "2024-11-20",
+          "size_mb": 500.0,
+          "is_archived": false
+        },
+        {
+          "id": "LOG-05",
+          "filename": "audit_2025_10.log",
+          "created_at": "2025-10-15",
+          "size_mb": 80.0,
+          "is_archived": true
+        },
+        {
+          "id": "LOG-06",
+          "filename": "sys_2025_09.log",
+          "created_at": "2025-09-10",
+          "size_mb": 45.0,
+          "is_archived": false
+        },
+        {
+          "id": "LOG-07",
+          "filename": "debug_2025_12.log",
+          "created_at": "2025-12-30",
+          "size_mb": 0.5,
+          "is_archived": false
+        },
+        {
+          "id": "LOG-08",
+          "filename": "auth_2025_12_02.log",
+          "created_at": "2025-12-02",
+          "size_mb": 35.0,
+          "is_archived": false,
+          "_injected": true
+        },
+        {
+          "id": "LOG-09",
+          "filename": "corrupt.log",
+          "created_at": null,
+          "size_mb": 0.0,
+          "is_archived": false,
+          "_injected": true
+        },
+        {
+          "id": "LOG-10",
+          "filename": "nomatch.log",
+          "created_at": "2026-01-01",
+          "size_mb": 0.1,
+          "is_archived": true,
+          "_injected": true
+        }
       ]
     },
     "branches": [
@@ -155,15 +348,28 @@
         "title": "Created 30+ days ago",
         "assumption": "'Old' is defined as files created more than 30 days ago.",
         "operation": "archive",
-        "update_set": {"is_archived": true},
+        "update_set": {
+          "is_archived": true
+        },
         "where": {
           "op": "and",
           "args": [
-            {"op": "compare", "field": "is_archived", "cmp": "eq", "value": false},
-            {"op": "older_than_days", "field": "created_at", "days": 30}
+            {
+              "op": "compare",
+              "field": "is_archived",
+              "cmp": "eq",
+              "value": false
+            },
+            {
+              "op": "older_than_days",
+              "field": "created_at",
+              "days": 30
+            }
           ]
         },
-        "chosen_meanings": {"old": "created_30"},
+        "chosen_meanings": {
+          "old": "created_30"
+        },
         "explanation": "Archives active unarchived logs older than 30 days."
       },
       {
@@ -171,15 +377,28 @@
         "title": "Created 90+ days ago",
         "assumption": "'Old' is defined as files created more than 90 days ago.",
         "operation": "archive",
-        "update_set": {"is_archived": true},
+        "update_set": {
+          "is_archived": true
+        },
         "where": {
           "op": "and",
           "args": [
-            {"op": "compare", "field": "is_archived", "cmp": "eq", "value": false},
-            {"op": "older_than_days", "field": "created_at", "days": 90}
+            {
+              "op": "compare",
+              "field": "is_archived",
+              "cmp": "eq",
+              "value": false
+            },
+            {
+              "op": "older_than_days",
+              "field": "created_at",
+              "days": 90
+            }
           ]
         },
-        "chosen_meanings": {"old": "created_90"},
+        "chosen_meanings": {
+          "old": "created_90"
+        },
         "explanation": "Archives only older quarterly log archives older than 90 days."
       }
     ],
@@ -187,7 +406,10 @@
       {
         "term": "old",
         "description": "Retention threshold is ambiguous: 30 days vs 90 days.",
-        "interpretation_ids": ["A", "B"]
+        "interpretation_ids": [
+          "A",
+          "B"
+        ]
       }
     ],
     "suggested_rewrite": "Archive unarchived log files whose creation date is older than 30 days.",
@@ -236,12 +458,18 @@
       {
         "term": "inactive threshold",
         "description": "Does not define the required number of days of inactivity before deletion.",
-        "interpretation_ids": ["A", "B"]
+        "interpretation_ids": [
+          "A",
+          "B"
+        ]
       },
       {
         "term": "missing dates",
         "description": "Fails to specify how accounts with missing activity timestamps should be classified.",
-        "interpretation_ids": ["A", "C"]
+        "interpretation_ids": [
+          "A",
+          "C"
+        ]
       }
     ],
     "suggested_rewrite": "Delete user accounts with recorded inactivity exceeding 90 days. Flag accounts with null activity dates for audit without deleting.",
@@ -258,6 +486,601 @@
     "interpretations": [],
     "candidate_ambiguities": [],
     "suggested_rewrite": "",
+    "model_info": {
+      "model": "fixture",
+      "mode": "fixture"
+    }
+  },
+  "give the team access to customer data.": {
+    "status": "ok",
+    "source": "fixture_fallback",
+    "fallback_reason": null,
+    "domain": "access_management",
+    "entity_schema": {
+      "name": "access_policy",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "description": "Policy ID"
+        },
+        {
+          "name": "team",
+          "type": "string",
+          "description": "Team name"
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "description": "Job title or role"
+        },
+        {
+          "name": "access_level",
+          "type": "string",
+          "description": "Current granted permission"
+        },
+        {
+          "name": "has_pii",
+          "type": "bool",
+          "description": "Whether customer PII is accessible"
+        }
+      ]
+    },
+    "world": {
+      "entity": "access_policy",
+      "today": "2026-01-01",
+      "records": [
+        {
+          "id": "P01",
+          "team": "core",
+          "role": "engineer",
+          "access_level": "none",
+          "has_pii": false
+        },
+        {
+          "id": "P02",
+          "team": "marketing",
+          "role": "analyst",
+          "access_level": "none",
+          "has_pii": false
+        },
+        {
+          "id": "P03",
+          "team": "contractor",
+          "role": "external",
+          "access_level": "none",
+          "has_pii": false
+        },
+        {
+          "id": "P04",
+          "team": "core",
+          "role": "lead",
+          "access_level": "read",
+          "has_pii": false
+        },
+        {
+          "id": "P05",
+          "team": "sales",
+          "role": "rep",
+          "access_level": "none",
+          "has_pii": false
+        },
+        {
+          "id": "P06",
+          "team": "core",
+          "role": "qa",
+          "access_level": "none",
+          "has_pii": false
+        },
+        {
+          "id": "P07",
+          "team": "support",
+          "role": "tier1",
+          "access_level": "read",
+          "has_pii": false
+        },
+        {
+          "id": "P08",
+          "team": "marketing",
+          "role": "intern",
+          "access_level": "none",
+          "has_pii": false
+        },
+        {
+          "id": "P09",
+          "team": "contractor",
+          "role": "vendor",
+          "access_level": "none",
+          "has_pii": false
+        },
+        {
+          "id": "P10",
+          "team": "core",
+          "role": "architect",
+          "access_level": "read",
+          "has_pii": false
+        }
+      ]
+    },
+    "branches": [
+      {
+        "id": "A",
+        "title": "Core engineering read-only",
+        "assumption": "'The team' refers strictly to core engineering without PII.",
+        "operation": "update",
+        "update_set": {
+          "access_level": "read"
+        },
+        "where": {
+          "op": "compare",
+          "field": "team",
+          "cmp": "eq",
+          "value": "core"
+        },
+        "chosen_meanings": {
+          "team": "core_only"
+        },
+        "explanation": "Grants read-only access to core internal engineering team members."
+      },
+      {
+        "id": "B",
+        "title": "All internal staff full PII access",
+        "assumption": "'The team' means all internal employees, granting full PII access.",
+        "operation": "update",
+        "update_set": {
+          "access_level": "admin",
+          "has_pii": true
+        },
+        "where": {
+          "op": "compare",
+          "field": "team",
+          "cmp": "ne",
+          "value": "contractor"
+        },
+        "chosen_meanings": {
+          "team": "all_internal_pii"
+        },
+        "explanation": "Grants elevated administrative access and customer PII to all internal staff."
+      },
+      {
+        "id": "C",
+        "title": "Everyone including external contractors",
+        "assumption": "'The team' includes all users on the workspace including external vendors.",
+        "operation": "update",
+        "update_set": {
+          "access_level": "read"
+        },
+        "where": {
+          "op": "not_null",
+          "field": "team"
+        },
+        "chosen_meanings": {
+          "team": "all_personnel"
+        },
+        "explanation": "Broadly provisions read access across all accounts on the system."
+      }
+    ],
+    "ambiguous_terms": [
+      {
+        "term": "the team",
+        "description": "Unclear whether it refers to core engineering, all employees, or external contractors."
+      },
+      {
+        "term": "access",
+        "description": "Permission scope undefined: read-only metadata vs full raw customer PII export."
+      }
+    ],
+    "suggested_rewrite": "Grant the core engineering team read-only access to anonymized customer analytics without PII.",
+    "model_info": {
+      "model": "fixture",
+      "mode": "fixture"
+    }
+  },
+  "restart services that are not responding.": {
+    "status": "ok",
+    "source": "fixture_fallback",
+    "fallback_reason": null,
+    "domain": "service_infrastructure",
+    "entity_schema": {
+      "name": "service_instance",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "description": "Instance ID"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Service name"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "Operational status"
+        },
+        {
+          "name": "unhealthy",
+          "type": "bool",
+          "description": "Whether HTTP health probes are failing"
+        },
+        {
+          "name": "cpu_pct",
+          "type": "float",
+          "description": "Current CPU utilization percentage"
+        }
+      ]
+    },
+    "world": {
+      "entity": "service_instance",
+      "today": "2026-01-01",
+      "records": [
+        {
+          "id": "SVC-01",
+          "name": "auth-api",
+          "status": "running",
+          "unhealthy": true,
+          "cpu_pct": 45.0
+        },
+        {
+          "id": "SVC-02",
+          "name": "payment-api",
+          "status": "running",
+          "unhealthy": false,
+          "cpu_pct": 96.5
+        },
+        {
+          "id": "SVC-03",
+          "name": "worker-pool",
+          "status": "running",
+          "unhealthy": true,
+          "cpu_pct": 94.0
+        },
+        {
+          "id": "SVC-04",
+          "name": "frontend-web",
+          "status": "running",
+          "unhealthy": false,
+          "cpu_pct": 22.0
+        },
+        {
+          "id": "SVC-05",
+          "name": "search-indexer",
+          "status": "stopped",
+          "unhealthy": true,
+          "cpu_pct": 0.0
+        },
+        {
+          "id": "SVC-06",
+          "name": "notification-svc",
+          "status": "running",
+          "unhealthy": false,
+          "cpu_pct": 15.0
+        },
+        {
+          "id": "SVC-07",
+          "name": "billing-cron",
+          "status": "running",
+          "unhealthy": true,
+          "cpu_pct": 30.0
+        },
+        {
+          "id": "SVC-08",
+          "name": "analytics-pipeline",
+          "status": "running",
+          "unhealthy": false,
+          "cpu_pct": 91.0
+        },
+        {
+          "id": "SVC-09",
+          "name": "cache-node-1",
+          "status": "running",
+          "unhealthy": false,
+          "cpu_pct": 10.0
+        },
+        {
+          "id": "SVC-10",
+          "name": "gateway-proxy",
+          "status": "running",
+          "unhealthy": false,
+          "cpu_pct": 50.0
+        }
+      ]
+    },
+    "branches": [
+      {
+        "id": "A",
+        "title": "Failing HTTP health checks",
+        "assumption": "'Not responding' means failing automated HTTP health check probes.",
+        "operation": "update",
+        "update_set": {
+          "status": "restarting"
+        },
+        "where": {
+          "op": "compare",
+          "field": "unhealthy",
+          "cmp": "eq",
+          "value": true
+        },
+        "chosen_meanings": {
+          "not_responding": "health_probe_failure"
+        },
+        "explanation": "Restarts only service instances currently failing automated health checks."
+      },
+      {
+        "id": "B",
+        "title": "High CPU lockup (>90%)",
+        "assumption": "'Not responding' indicates CPU lockup exceeding 90% utilization.",
+        "operation": "update",
+        "update_set": {
+          "status": "restarting"
+        },
+        "where": {
+          "op": "compare",
+          "field": "cpu_pct",
+          "cmp": "gte",
+          "value": 90.0
+        },
+        "chosen_meanings": {
+          "not_responding": "high_cpu_saturation"
+        },
+        "explanation": "Restarts services experiencing CPU saturation over 90%."
+      },
+      {
+        "id": "C",
+        "title": "All degraded (failed checks or high CPU)",
+        "assumption": "'Not responding' covers any instance that is either unhealthy or CPU-saturated.",
+        "operation": "update",
+        "update_set": {
+          "status": "restarting"
+        },
+        "where": {
+          "op": "or",
+          "args": [
+            {
+              "op": "compare",
+              "field": "unhealthy",
+              "cmp": "eq",
+              "value": true
+            },
+            {
+              "op": "compare",
+              "field": "cpu_pct",
+              "cmp": "gte",
+              "value": 90.0
+            }
+          ]
+        },
+        "chosen_meanings": {
+          "not_responding": "all_degraded"
+        },
+        "explanation": "Restarts all degraded services to recover system responsiveness."
+      }
+    ],
+    "ambiguous_terms": [
+      {
+        "term": "not responding",
+        "description": "Does not clarify whether responsiveness is defined by HTTP health checks or CPU utilization."
+      },
+      {
+        "term": "services",
+        "description": "Unclear whether to restart all degraded tiers or only critical customer-facing microservices."
+      }
+    ],
+    "suggested_rewrite": "Gracefully restart backend microservices whose HTTP health check probes have failed consecutively for over 3 minutes.",
+    "model_info": {
+      "model": "fixture",
+      "mode": "fixture"
+    }
+  },
+  "clean up stale orders.": {
+    "status": "ok",
+    "source": "fixture_fallback",
+    "fallback_reason": null,
+    "domain": "order_processing",
+    "entity_schema": {
+      "name": "order",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "description": "Order ID"
+        },
+        {
+          "name": "customer",
+          "type": "string",
+          "description": "Customer name"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "Order fulfillment status"
+        },
+        {
+          "name": "created_at",
+          "type": "date",
+          "description": "Order placement date"
+        },
+        {
+          "name": "total_usd",
+          "type": "float",
+          "description": "Order total in USD"
+        }
+      ]
+    },
+    "world": {
+      "entity": "order",
+      "today": "2026-01-01",
+      "records": [
+        {
+          "id": "ORD-01",
+          "customer": "Acme",
+          "status": "unpaid",
+          "created_at": "2025-12-10",
+          "total_usd": 450.0
+        },
+        {
+          "id": "ORD-02",
+          "customer": "Beta",
+          "status": "pending_fulfillment",
+          "created_at": "2025-11-01",
+          "total_usd": 1200.0
+        },
+        {
+          "id": "ORD-03",
+          "customer": "Gamma",
+          "status": "unpaid",
+          "created_at": "2025-12-28",
+          "total_usd": 99.0
+        },
+        {
+          "id": "ORD-04",
+          "customer": "Delta",
+          "status": "completed",
+          "created_at": "2025-10-15",
+          "total_usd": 5000.0
+        },
+        {
+          "id": "ORD-05",
+          "customer": "Epsilon",
+          "status": "pending_fulfillment",
+          "created_at": "2025-12-20",
+          "total_usd": 340.0
+        },
+        {
+          "id": "ORD-06",
+          "customer": "Zeta",
+          "status": "unpaid",
+          "created_at": "2025-08-01",
+          "total_usd": 890.0
+        },
+        {
+          "id": "ORD-07",
+          "customer": "Eta",
+          "status": "abandoned_cart",
+          "created_at": "2025-12-15",
+          "total_usd": 150.0
+        },
+        {
+          "id": "ORD-08",
+          "customer": "Theta",
+          "status": "abandoned_cart",
+          "created_at": "2025-12-30",
+          "total_usd": 75.0
+        },
+        {
+          "id": "ORD-09",
+          "customer": "Iota",
+          "status": "unpaid",
+          "created_at": "2025-11-20",
+          "total_usd": 2100.0
+        },
+        {
+          "id": "ORD-10",
+          "customer": "Kappa",
+          "status": "completed",
+          "created_at": "2025-12-01",
+          "total_usd": 400.0
+        }
+      ]
+    },
+    "branches": [
+      {
+        "id": "A",
+        "title": "Unpaid orders older than 14 days",
+        "assumption": "'Stale' means orders with unpaid status older than 14 days.",
+        "operation": "delete",
+        "update_set": null,
+        "where": {
+          "op": "and",
+          "args": [
+            {
+              "op": "compare",
+              "field": "status",
+              "cmp": "eq",
+              "value": "unpaid"
+            },
+            {
+              "op": "older_than_days",
+              "field": "created_at",
+              "days": 14
+            }
+          ]
+        },
+        "chosen_meanings": {
+          "stale": "unpaid_14_days"
+        },
+        "explanation": "Deletes unpaid customer orders open for over two weeks."
+      },
+      {
+        "id": "B",
+        "title": "All abandoned carts and unpaid orders",
+        "assumption": "'Stale' includes both abandoned carts and any unpaid checkout.",
+        "operation": "delete",
+        "update_set": null,
+        "where": {
+          "op": "or",
+          "args": [
+            {
+              "op": "compare",
+              "field": "status",
+              "cmp": "eq",
+              "value": "abandoned_cart"
+            },
+            {
+              "op": "compare",
+              "field": "status",
+              "cmp": "eq",
+              "value": "unpaid"
+            }
+          ]
+        },
+        "chosen_meanings": {
+          "stale": "all_unpaid_or_abandoned"
+        },
+        "explanation": "Purges all incomplete orders regardless of age."
+      },
+      {
+        "id": "C",
+        "title": "Orders pending fulfillment older than 30 days",
+        "assumption": "'Stale' refers to unfulfilled warehouse orders delayed over 30 days.",
+        "operation": "archive",
+        "update_set": {
+          "status": "archived_pending"
+        },
+        "where": {
+          "op": "and",
+          "args": [
+            {
+              "op": "compare",
+              "field": "status",
+              "cmp": "eq",
+              "value": "pending_fulfillment"
+            },
+            {
+              "op": "older_than_days",
+              "field": "created_at",
+              "days": 30
+            }
+          ]
+        },
+        "chosen_meanings": {
+          "stale": "unfulfilled_30_days"
+        },
+        "explanation": "Flags delayed warehouse fulfillment orders for customer service escalation."
+      }
+    ],
+    "ambiguous_terms": [
+      {
+        "term": "stale",
+        "description": "Unclear whether it refers to unpaid checkouts, abandoned carts, or delayed fulfillment orders."
+      },
+      {
+        "term": "clean up",
+        "description": "Could mean permanently deleting records, cancelling orders, or archiving them."
+      }
+    ],
+    "suggested_rewrite": "Cancel and delete unpaid orders older than 14 days; archive delayed fulfillment orders for support review.",
     "model_info": {
       "model": "fixture",
       "mode": "fixture"
