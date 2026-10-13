@@ -1,0 +1,23 @@
+[
+  {
+    "id": "inst-001",
+    "instruction": "Delete old user records.",
+    "scenario": "user_cleanup",
+    "description": "Primary benchmark instruction showing divergence between creation date vs last activity date.",
+    "expected_divergence": true
+  },
+  {
+    "id": "inst-002",
+    "instruction": "Remove inactive users.",
+    "scenario": "user_cleanup",
+    "description": "Secondary benchmark testing handling of missing activity telemetry and inactivity thresholds.",
+    "expected_divergence": true
+  },
+  {
+    "id": "inst-003",
+    "instruction": "Restore the latest backup if necessary.",
+    "scenario": "user_cleanup",
+    "description": "Out-of-scope instruction that should trigger unsupported scenario response.",
+    "expected_divergence": false
+  }
+]
