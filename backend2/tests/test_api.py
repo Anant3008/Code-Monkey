@@ -32,7 +32,7 @@ TEST_ORIGIN_DEV_CLIENT = "http://localhost:3000"
 
 @pytest.fixture
 def client() -> TestClient:
-    set_ai_engine_provider(generate_interpretations)
+    set_ai_engine_provider(None)
     with TestClient(app) as test_client:
         yield test_client
     set_ai_engine_provider(generate_interpretations)

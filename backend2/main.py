@@ -131,12 +131,12 @@ def analyze_instruction(request: AnalyzeRequest) -> AnalysisResult:
 
     ai_data = resolve_interpretations(instruction, scenario)
 
-    if ai_data.get("status") == "unsupported":
+    if ai_data.get("status") in ("unsupported", "error"):
         return AnalysisResult(
             run_id=run_id,
             instruction=instruction,
             scenario=scenario,
-            status="unsupported",
+            status=ai_data.get("status"),
             reason=ai_data.get("reason", "Instruction is outside the supported simulation scope."),
             outcomes_diverge=False,
             suggested_rewrite=ai_data.get("suggested_rewrite", ""),
