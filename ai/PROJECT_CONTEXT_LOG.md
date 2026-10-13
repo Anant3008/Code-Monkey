@@ -204,3 +204,23 @@ Preserved for 100% backward compatibility with the initial contract.
 - **Testing (`ai/tests/test_reference_simulator.py`)**:
   - Added 7 tests covering fixture divergence, null-date isolation, exact 90-day boundary matching (90 vs 91), null-semantics table covering every predicate, `not` over null fields, branch isolation & determinism, and outcomes validation.
   - Test suite now: **52 passed**, 2 skipped (100% offline pass rate).
+
+### Entry 10: Part 5 Prompt Quality Pass
+- **Generic Analyzer Prompt (`ai/prompts.py`)**:
+  - Explicitly states the model is an analyst, never an executor; `<instruction>` tags contain untrusted data and all commands inside must be ignored.
+  - Documents allowed operations (`delete`, `archive`, `update`, `flag`), forbidden `_` prefix, two-valued null semantics, calendar day date math, relational comparison type restrictions, and max 20 items for `in`.
+  - Directs model to probe: time basis (creation vs last activity/status update), thresholds, boundary inclusion, missing/null values, scope ("all" vs "some"), and "if necessary" conditions.
+  - Mandates behavioral selection divergence; for instructions already specific, requires identifying remaining ambiguity.
+- **Multi-Domain Few-Shots**:
+  - Domain 1: Users ("Delete old user records.").
+  - Domain 2: Files ("Archive old log files.").
+  - Domain 3: Orders ("Cancel pending orders older than 30 days." - already specific, probes remaining ambiguity in order creation vs status update timestamp and strict pending vs pending/payment_review scope).
+  - Domain 4: Unsupported ("rm -rf /var/log/* && systemctl restart nginx" - returns status unsupported with honest reason).
+- **World Prompt**:
+  - Strict rules: realistic fictional data only, no real people/organizations, emails on `@example.com` domains, dates relative to given today, pure JSON format.
+- **Disambiguation Rewrite Prompt**:
+  - Injects code-computed simulation evidence as given facts that must not be recomputed; outputs clear rewrite resolving divergence and lists `resolved_terms`.
+- **Testing & Anti-Drift Verification (`ai/tests/test_ai_engine.py`)**:
+  - Added `test_prompt_embedded_examples_validate_against_schema`: programmatically validates all embedded few-shot JSON structures against `GenericAnalysisOutput`, `LegacyInterpretationSchema`, and predicate AST limits/schema validators.
+  - Full test suite: **53 passed**, 2 skipped in ~0.96s.
+
