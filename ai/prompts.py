@@ -285,9 +285,18 @@ def build_world_gen_messages(entity_name: str, fields: List[Dict[str, Any]]) -> 
     ]
 
 
+try:
+    from ai.outcomes import SimulationOutcomes
+except ImportError:
+    from outcomes import SimulationOutcomes
+
 REWRITE_PROMPT = """You are an Operational Disambiguation Expert for Semantic Chaos Monkey.
-You are given an original natural-language instruction, the identified ambiguous terms, and the simulated outcomes from running competing interpretations.
-Your task is to write a single, unambiguous instruction that explicitly clarifies criteria, thresholds, and null handling.
+You are given an original natural-language instruction, the identified ambiguous terms, and deterministic simulation evidence comparing competing branch interpretations.
+
+### CORE EVIDENCE RULES:
+1. The simulation evidence below contains GIVEN FACTS computed deterministically by the simulation engine. DO NOT recompute, dispute, or alter these numbers or affected record IDs.
+2. Address the specific divergences where branches differed: explain clearly why different assumptions led to different subsets of records being affected.
+3. Propose a single, unambiguous instruction that explicitly resolves all identified ambiguities, specifying exact criteria, thresholds, and handling for missing/null dates.
 
 Output JSON only matching:
 {
@@ -296,14 +305,31 @@ Output JSON only matching:
 }
 """
 
-def build_rewrite_messages(instruction: str, ambiguous_terms: List[Dict[str, Any]], outcomes: Any = None) -> List[Dict[str, str]]:
-    """Builds chat messages for generating a disambiguated rewrite."""
+def build_rewrite_messages(
+    instruction: str,
+    ambiguous_terms: List[Dict[str, Any]],
+    outcomes: Any,
+    branches: Any = None
+) -> List[Dict[str, str]]:
+    """Builds chat messages for generating a disambiguated rewrite with structured simulation evidence."""
+    sim_outcomes = SimulationOutcomes.coerce(outcomes, branches=branches)
+    evidence_summary = sim_outcomes.get_evidence_summary()
+
     payload = {
         "original_instruction": instruction,
         "ambiguous_terms": ambiguous_terms,
-        "simulation_outcomes": outcomes or "Different branches resulted in conflicting sets of affected records."
+        "simulation_evidence": {
+            "diverges": evidence_summary["diverges"],
+            "distinct_sets_count": evidence_summary["distinct_sets"],
+            "differing_branch_pairs": evidence_summary["differing_pairs"],
+            "common_affected_ids": evidence_summary["common_ids"],
+            "exclusive_records_by_branch": evidence_summary["only_in"],
+            "empty_branches": evidence_summary["empty_branches"],
+            "branch_summary": evidence_summary["branch_summary"]
+        }
     }
     return [
         {"role": "system", "content": REWRITE_PROMPT},
         {"role": "user", "content": json.dumps(payload)}
     ]
+

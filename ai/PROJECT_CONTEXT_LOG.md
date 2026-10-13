@@ -185,3 +185,22 @@ Preserved for 100% backward compatibility with the initial contract.
 ### Entry 8: Model Configuration Update
 - Updated `ai/.env` to configure `LLM_MODEL=gpt-oss:20b` with the local Ollama endpoint (`http://localhost:11434/v1`).
 - Verified test suite passes cleanly: 45 passed, 2 skipped in ~1.05s.
+
+### Entry 9: Part 4 Outcomes Contract and Reference Simulator
+- **Outcomes Models (`ai/outcomes.py`)**:
+  - `BranchOutcome`: `branch_id`, `affected_ids`, and validated `affected_count == len(affected_ids)`.
+  - `SimulationOutcomes`: list of `BranchOutcome` with unique IDs, cross-branch validation against provided branch plans, and `SimulationOutcomes.coerce()` which accepts structured shapes and strictly rejects free-text strings.
+  - Computed deterministic evidence summary in code (`diverges`, `distinct_sets`, `only_in`, `common_ids`, `empty_branches`, `differing_pairs`).
+  - Updated `generate_rewrite(instruction, ambiguous_terms, outcomes, branches=None)` in `ai/ai_engine.py` and `build_rewrite_messages()` in `ai/prompts.py` to require structured outcomes and supply simulation evidence as given facts the model must not recompute.
+- **Reference Simulator (`ai/tools/reference_simulator.py`)**:
+  - Pure Python, dependency-free reference interpreter specification for Part 3 semantics (header docstring clarifies it is an executable spec, not Person 3's production simulator).
+  - Explicit dispatch on predicate `op` (no eval/exec).
+  - `run_branch(world, branch)`: isolates execution on a deep copy of records and applies `delete`, `archive`, `update`, or `flag`.
+  - `run_all(world, branches)`: runs branches independently on separate deep copies.
+  - `compare_outcomes(outcomes)`: returns `diverges`, `distinct_sets`, `only_in`, `common_ids`.
+- **Golden Outcomes (`ai/tools/make_golden.py` & `ai/tools/golden_outcomes.json`)**:
+  - Script runnable via `python -m ai.tools.make_golden`.
+  - Runs all deterministic fixtures through `reference_simulator` and writes expected outcomes for Person 3's simulator to diff against.
+- **Testing (`ai/tests/test_reference_simulator.py`)**:
+  - Added 7 tests covering fixture divergence, null-date isolation, exact 90-day boundary matching (90 vs 91), null-semantics table covering every predicate, `not` over null fields, branch isolation & determinism, and outcomes validation.
+  - Test suite now: **52 passed**, 2 skipped (100% offline pass rate).

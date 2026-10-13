@@ -50,7 +50,9 @@ try:
         validate_predicate_limits,
         validate_predicate_schema,
         validate_operation_and_update_set,
-        WORLD_TODAY
+        WORLD_TODAY,
+        BranchOutcome,
+        SimulationOutcomes
     )
 except ImportError:
     from prompts import (
@@ -71,7 +73,9 @@ except ImportError:
         validate_predicate_limits,
         validate_predicate_schema,
         validate_operation_and_update_set,
-        WORLD_TODAY
+        WORLD_TODAY,
+        BranchOutcome,
+        SimulationOutcomes
     )
 
 logger = logging.getLogger("semantic_chaos_monkey.ai_engine")
@@ -913,12 +917,17 @@ class AIEngine:
         self,
         instruction: str,
         ambiguous_terms: List[Dict[str, Any]],
-        outcomes: Optional[Dict[str, Any]] = None
+        outcomes: Any,
+        branches: Optional[List[Any]] = None
     ) -> Dict[str, Any]:
         """
         Generates a clear, disambiguated rewrite after branches have been simulated.
-        Outcomes are read-only evidence.
+        Outcomes must be structured SimulationOutcomes (dicts or models), strictly validated.
+        Free-text outcomes are rejected with a clear error.
         """
+        # Validate structured outcomes shape
+        validated_outcomes = SimulationOutcomes.coerce(outcomes, branches=branches)
+
         if self.fixture_mode or not self.api_key or self.force_fallback or not self.model:
             return {
                 "suggested_rewrite": f"Explicitly clarify thresholds and criteria for {', '.join(t.get('term', '') for t in ambiguous_terms)}.",
@@ -926,7 +935,7 @@ class AIEngine:
             }
 
         client = self._get_client()
-        messages = build_rewrite_messages(instruction, ambiguous_terms, outcomes)
+        messages = build_rewrite_messages(instruction, ambiguous_terms, validated_outcomes, branches=branches)
         try:
             resp = client.chat.completions.create(
                 model=self.model,
@@ -984,9 +993,14 @@ def generate_interpretations(instruction: str, scenario: str = "user_cleanup") -
     return _engine.generate_interpretations(instruction, scenario)
 
 
-def generate_rewrite(instruction: str, ambiguous_terms: List[Dict[str, Any]], outcomes: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Generates rewrite after simulation."""
-    return _engine.generate_rewrite(instruction, ambiguous_terms, outcomes)
+def generate_rewrite(
+    instruction: str,
+    ambiguous_terms: List[Dict[str, Any]],
+    outcomes: Any,
+    branches: Optional[List[Any]] = None
+) -> Dict[str, Any]:
+    """Generates rewrite after simulation with validated outcomes evidence."""
+    return _engine.generate_rewrite(instruction, ambiguous_terms, outcomes, branches=branches)
 
 
 # ---------------------------------------------------------------------------
